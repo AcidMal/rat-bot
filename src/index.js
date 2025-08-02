@@ -2,7 +2,30 @@ const { Client, GatewayIntentBits, Collection } = require('discord.js');
 const { joinVoiceChannel } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
+const envPath = path.join(__dirname, '../.env');
+console.log('🔍 Loading .env from:', envPath);
+require('dotenv').config({ path: envPath });
+console.log('🔍 Environment variables loaded. Token exists:', !!process.env.DISCORD_TOKEN);
+
+console.log('🚀 Starting Discord Bot...');
+console.log('📁 Current directory:', process.cwd());
+console.log('🔧 Node version:', process.version);
+
+// Check if .env file exists
+console.log('🔍 Looking for .env file at:', envPath);
+if (!fs.existsSync(envPath)) {
+  console.error('❌ .env file not found! Please create one based on env.example');
+  process.exit(1);
+}
+console.log('✅ .env file found');
+
+// Check if DISCORD_TOKEN exists
+if (!process.env.DISCORD_TOKEN) {
+  console.error('❌ DISCORD_TOKEN not found in .env file!');
+  process.exit(1);
+}
+
+console.log('✅ Environment variables loaded');
 
 // Create a new client instance
 const client = new Client({
@@ -25,44 +48,75 @@ client.commands = new Collection();
 
 // Load commands recursively
 function loadCommands(dir) {
-  const commandFiles = fs.readdirSync(dir);
-  
-  for (const file of commandFiles) {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
+  try {
+    console.log(`📂 Loading commands from: ${dir}`);
+    const commandFiles = fs.readdirSync(dir);
+    console.log(`📄 Found ${commandFiles.length} files in commands directory`);
     
-    if (stat.isDirectory()) {
-      // Recursively load commands from subdirectories
-      loadCommands(filePath);
-    } else if (file.endsWith('.js')) {
-      const command = require(filePath);
+    for (const file of commandFiles) {
+      const filePath = path.join(dir, file);
+      const stat = fs.statSync(filePath);
       
-      // Set a new item in the Collection with the key as the command name and the value as the exported module
-      if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-      } else {
-        console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
+      if (stat.isDirectory()) {
+        // Recursively load commands from subdirectories
+        console.log(`📁 Loading subdirectory: ${file}`);
+        loadCommands(filePath);
+      } else if (file.endsWith('.js')) {
+        try {
+          console.log(`📄 Loading command: ${file}`);
+          const command = require(filePath);
+          
+          // Set a new item in the Collection with the key as the command name and the value as the exported module
+          if ('data' in command && 'execute' in command) {
+            client.commands.set(command.data.name, command);
+            console.log(`✅ Loaded command: ${command.data.name}`);
+          } else {
+            console.log(`⚠️  The command at ${filePath} is missing a required "data" or "execute" property.`);
+          }
+        } catch (error) {
+          console.error(`❌ Error loading command ${file}:`, error.message);
+        }
       }
     }
+  } catch (error) {
+    console.error(`❌ Error loading commands from ${dir}:`, error.message);
   }
 }
 
 const commandsPath = path.join(__dirname, 'commands');
-loadCommands(commandsPath);
+if (fs.existsSync(commandsPath)) {
+  loadCommands(commandsPath);
+  console.log(`✅ Loaded ${client.commands.size} commands total`);
+} else {
+  console.error('❌ Commands directory not found!');
+  process.exit(1);
+}
 
 // Load events
 const eventsPath = path.join(__dirname, 'events');
-const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
-
-for (const file of eventFiles) {
-  const filePath = path.join(eventsPath, file);
-  const event = require(filePath);
+if (fs.existsSync(eventsPath)) {
+  const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
+  console.log(`📄 Found ${eventFiles.length} event files`);
   
-  if (event.once) {
-    client.once(event.name, (...args) => event.execute(...args));
-  } else {
-    client.on(event.name, (...args) => event.execute(...args));
+  for (const file of eventFiles) {
+    try {
+      const filePath = path.join(eventsPath, file);
+      console.log(`📄 Loading event: ${file}`);
+      const event = require(filePath);
+      
+      if (event.once) {
+        client.once(event.name, (...args) => event.execute(...args));
+      } else {
+        client.on(event.name, (...args) => event.execute(...args));
+      }
+      console.log(`✅ Loaded event: ${event.name}`);
+    } catch (error) {
+      console.error(`❌ Error loading event ${file}:`, error.message);
+    }
   }
+} else {
+  console.error('❌ Events directory not found!');
+  process.exit(1);
 }
 
 // Handle interaction events
@@ -88,5 +142,18 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// Add error handlers
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Login to Discord with your client's token
-client.login(process.env.DISCORD_TOKEN); 
+console.log('🔐 Attempting to login to Discord...');
+client.login(process.env.DISCORD_TOKEN).catch(error => {
+  console.error('❌ Failed to login:', error.message);
+  process.exit(1);
+}); 
