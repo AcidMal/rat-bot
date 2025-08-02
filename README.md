@@ -10,6 +10,7 @@ A feature-rich Discord bot built with Discord.py that provides useful server man
 - **Modular Design**: Commands organized into separate cog files by category
 - **Database Integration**: SQLite database for mod logs, warnings, custom commands, and user stats
 - **Auto-Installation**: Shell script for easy setup and installation
+- **Easy Updates**: Update script for keeping the bot current without reinstallation
 - **Utility Commands**: Ping, info, help, echo
 - **Server Management**: Clear messages, kick, ban, unban, warn, warnings
 - **Information Commands**: User info, server info, role info, channel info
@@ -43,6 +44,45 @@ nano .env
 ### 2. Manual Installation
 
 Follow the detailed setup instructions below.
+
+## Easy Updates
+
+### Update Scripts
+
+The bot includes easy update scripts that don't require reinstallation:
+
+#### **Linux/Mac:**
+```bash
+./update.sh
+```
+
+#### **Windows:**
+```cmd
+update.bat
+```
+
+#### **Manual Update:**
+```bash
+python update.py
+```
+
+### What the Update Script Does
+
+- **📦 Updates Dependencies**: Updates all Python packages to latest versions
+- **🗄️ Database Backup**: Creates automatic backup before updates
+- **📡 Git Integration**: Pulls latest code if using git repository
+- **🔧 Schema Updates**: Updates database schema if needed
+- **📝 Update Logging**: Logs all update activities
+- **🛡️ Safety Checks**: Validates environment before updating
+
+### Update Features
+
+- **Non-Destructive**: Preserves all your data and settings
+- **Automatic Backup**: Creates timestamped database backups
+- **Dependency Management**: Updates all packages including yt-dlp
+- **Schema Migration**: Automatically adds new database tables
+- **Version Tracking**: Shows current and updated versions
+- **Error Recovery**: Graceful handling of update failures
 
 ## Sharding Support
 
@@ -130,6 +170,7 @@ The shard manager provides:
 | `nowplaying` | Show current song | `/nowplaying` or `!nowplaying` |
 | `volume` | Set music volume | `/volume <0-100>` or `!volume <0-100>` |
 | `leave` | Leave voice channel | `/leave` or `!leave` |
+| `fixmusic` | Update yt-dlp (Admin) | `/fixmusic` or `!fixmusic` |
 
 ### Moderation Commands
 | Command | Description | Usage |
@@ -273,6 +314,7 @@ The bot includes a comprehensive music system with the following features:
 - **`/volume <0-100>`** - Set the music volume
 - **`/join`** - Join your voice channel
 - **`/leave`** - Leave the voice channel
+- **`/fixmusic`** - Update yt-dlp (admin only)
 
 ### Music Features
 - **YouTube Support**: Play from YouTube URLs or search terms
@@ -281,6 +323,7 @@ The bot includes a comprehensive music system with the following features:
 - **Auto-disconnect**: Bot leaves when alone in voice channel
 - **Rich Embeds**: Beautiful song information displays
 - **Error Handling**: Graceful handling of music errors
+- **SSL Bypass**: Automatic SSL certificate handling
 
 ### Music Usage Examples
 ```bash
@@ -303,6 +346,9 @@ The bot includes a comprehensive music system with the following features:
 
 # Leave voice channel
 /leave
+
+# Fix music issues (admin only)
+/fixmusic
 ```
 
 ## Slash Commands vs Legacy Commands
@@ -335,9 +381,15 @@ rat-bot/
 ├── database.py         # Database management and operations
 ├── shard_manager.py    # Shard management for large-scale deployments
 ├── run_sharded.py      # Simple sharded bot runner
+├── update.py           # Update script for easy updates
+├── update.sh           # Linux/Mac update script
+├── update.bat          # Windows update script
+├── update_ytdlp.py     # yt-dlp update script
 ├── requirements.txt    # Python dependencies
 ├── install.sh         # Auto-installation script
+├── install.bat        # Windows installation script
 ├── run.sh             # Bot run script with sharding options
+├── run.bat            # Windows run script
 ├── README.md          # This file
 ├── example.env        # Environment template
 ├── .gitignore         # Git ignore file
@@ -421,6 +473,14 @@ async def setup(bot):
 
 ## Features in Detail
 
+### Update System
+- **Non-Destructive Updates**: Preserves all data and settings
+- **Automatic Backups**: Creates timestamped database backups
+- **Dependency Management**: Updates all packages including yt-dlp
+- **Schema Migration**: Automatically adds new database tables
+- **Version Tracking**: Shows current and updated versions
+- **Error Recovery**: Graceful handling of update failures
+
 ### Sharding System
 - **Automatic Sharding**: Discord.py automatically determines optimal shard count
 - **Manual Sharding**: Custom shard management for very large bots
@@ -435,6 +495,7 @@ async def setup(bot):
 - **Auto-disconnect**: Bot leaves when alone in voice channel
 - **Rich Embeds**: Beautiful song information displays
 - **Error Handling**: Graceful handling of music errors
+- **SSL Bypass**: Automatic SSL certificate handling
 
 ### Hybrid Commands
 - **Dual compatibility**: Works with both slash and legacy commands
@@ -473,6 +534,7 @@ async def setup(bot):
 - Guild join/leave tracking
 - Command error logging
 - Shard status monitoring
+- Update activity logging
 
 ### Rich Embeds
 - All responses use Discord embeds
@@ -494,6 +556,13 @@ async def setup(bot):
 5. **Database errors**: Run `./install.sh` again to recreate the database
 6. **Permission denied**: Make sure the scripts are executable: `chmod +x *.sh`
 
+### Update Issues
+
+1. **Update failed**: Check your internet connection and try again
+2. **Database backup failed**: Ensure you have write permissions to the data directory
+3. **Git not found**: Install git or skip code updates
+4. **Virtual environment issues**: Re-run the installation script
+
 ### Sharding Issues
 
 1. **"Too many guilds"**: Enable sharding with `./run.sh --sharded`
@@ -507,6 +576,7 @@ async def setup(bot):
 2. **"No module named 'yt_dlp'"**: Run `pip install -r requirements.txt`
 3. **Music not playing**: Check bot has "Connect" and "Speak" permissions
 4. **Queue not working**: Make sure you're in a voice channel
+5. **SSL certificate errors**: Use `/fixmusic` command or run `python update_ytdlp.py`
 
 ### Slash Command Sync Issues
 
