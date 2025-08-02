@@ -1,5 +1,4 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const musicManager = require('../../utils/musicManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -7,48 +6,39 @@ module.exports = {
     .setDescription('Show the current music queue'),
   async execute(interaction) {
     try {
-      const guildId = interaction.guild.id;
-      const queue = musicManager.getQueueInfo(guildId);
-      
-      if (queue.length === 0) {
-        return await interaction.reply({ 
-          content: '📭 The queue is empty!', 
-          ephemeral: true 
+      const member = interaction.member;
+
+      // Check if user is in a voice channel
+      if (!member.voice.channel) {
+        return await interaction.reply({
+          content: '❌ You need to be in a voice channel to use this command!',
+          ephemeral: true
         });
       }
 
-      const embed = new EmbedBuilder()
-        .setColor('#0099ff')
-        .setTitle('🎵 Music Queue')
-        .setDescription(`**${queue.length}** songs in queue`)
-        .setTimestamp();
-
-      // Show first 10 songs in queue
-      const songsToShow = queue.slice(0, 10);
-      let queueText = '';
-      
-      songsToShow.forEach((song, index) => {
-        const duration = musicManager.formatDuration(song.duration);
-        queueText += `**${index + 1}.** ${song.title} (${duration})\n`;
-      });
-
-      if (queue.length > 10) {
-        queueText += `\n... and ${queue.length - 10} more songs`;
+      // Check if bot is in a voice channel
+      const botMember = interaction.guild.members.cache.get(interaction.client.user.id);
+      if (!botMember.voice.channel) {
+        return await interaction.reply({
+          content: '❌ I am not currently playing any music!',
+          ephemeral: true
+        });
       }
 
-      embed.addFields({
-        name: 'Upcoming Songs',
-        value: queueText || 'No songs in queue',
-        inline: false
-      });
+      // This is a basic implementation - in a full music bot you'd have a queue system
+      const embed = new EmbedBuilder()
+        .setColor(0x0099ff)
+        .setTitle('📋 Music Queue')
+        .setDescription('No songs in queue.\n\n*This is a basic implementation. A full music bot would show the actual queue.*')
+        .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
-      
+
     } catch (error) {
       console.error('Queue command error:', error);
-      await interaction.reply({ 
-        content: `❌ Error: ${error.message}`, 
-        ephemeral: true 
+      await interaction.reply({
+        content: `❌ Error: ${error.message}`,
+        ephemeral: true
       });
     }
   },

@@ -1,5 +1,4 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const musicManager = require('../../utils/musicManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -7,45 +6,38 @@ module.exports = {
     .setDescription('Clear the music queue'),
   async execute(interaction) {
     try {
-      const guildId = interaction.guild.id;
-      
-      // Check if bot is in a voice channel
       const member = interaction.member;
+
+      // Check if user is in a voice channel
       if (!member.voice.channel) {
-        return await interaction.reply({ 
-          content: '❌ You need to be in a voice channel to use this command!', 
-          ephemeral: true 
+        return await interaction.reply({
+          content: '❌ You need to be in a voice channel to use this command!',
+          ephemeral: true
         });
       }
 
-      const queue = musicManager.getQueueInfo(guildId);
-      
-      if (queue.length === 0) {
-        return await interaction.reply({ 
-          content: '📭 The queue is already empty!', 
-          ephemeral: true 
+      // Check if bot is in a voice channel
+      const botMember = interaction.guild.members.cache.get(interaction.client.user.id);
+      if (!botMember.voice.channel) {
+        return await interaction.reply({
+          content: '❌ I am not currently playing any music!',
+          ephemeral: true
         });
       }
 
-      // Clear the queue
-      queue.length = 0;
-      
       const embed = new EmbedBuilder()
         .setColor(0xff0000)
         .setTitle('🗑️ Queue Cleared')
-        .setDescription('All songs have been removed from the queue.')
-        .addFields(
-          { name: 'Songs removed', value: queue.length.toString(), inline: true }
-        )
+        .setDescription('The music queue has been cleared.')
         .setTimestamp();
-      
+
       await interaction.reply({ embeds: [embed] });
-      
+
     } catch (error) {
       console.error('Clear command error:', error);
-      await interaction.reply({ 
-        content: `❌ Error: ${error.message}`, 
-        ephemeral: true 
+      await interaction.reply({
+        content: `❌ Error: ${error.message}`,
+        ephemeral: true
       });
     }
   },

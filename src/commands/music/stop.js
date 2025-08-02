@@ -2,8 +2,8 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('skip')
-    .setDescription('Skip the current song'),
+    .setName('stop')
+    .setDescription('Stop playing and leave the voice channel'),
   async execute(interaction) {
     try {
       const member = interaction.member;
@@ -25,17 +25,19 @@ module.exports = {
         });
       }
 
-      // This is a basic implementation - in a full music bot you'd have a queue system
+      // Leave the voice channel
+      botMember.voice.disconnect();
+
       const embed = new EmbedBuilder()
-        .setColor(0x00ff00)
-        .setTitle('⏭️ Song Skipped')
-        .setDescription('The current song has been skipped.')
+        .setColor(0xff0000)
+        .setTitle('⏹️ Music Stopped')
+        .setDescription('Stopped playing and left the voice channel.')
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
 
     } catch (error) {
-      console.error('Skip command error:', error);
+      console.error('Stop command error:', error);
       await interaction.reply({
         content: `❌ Error: ${error.message}`,
         ephemeral: true
