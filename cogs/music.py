@@ -1,237 +1,31 @@
 import asyncio
-import os
 import discord
 from discord.ext import commands
 from discord import app_commands
-from pathlib import Path
-import yt_dlp
-import ssl
+import lavalink
 from datetime import timedelta
-
-# Configure yt-dlp options with SSL certificate handling
-yt_dlp.utils.bug_reports_message = lambda: ''
-
-ytdl_format_options = {
-    'format': 'bestaudio/best',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,  # Disable certificate checking
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',
-    # SSL certificate handling
-    'nocheckcertificate': True,
-    'extractor_retries': 3,
-    'fragment_retries': 3,
-    'retries': 3,
-    # Additional options for better compatibility
-    'prefer_ffmpeg': True,
-    'geo_bypass': True,
-    'nocheckcertificate': True,
-    # Cookie handling to avoid sign-in prompts
-    'cookiefile': None,
-    'no_cookies': True,
-}
-
-ffmpeg_options = {
-    'options': '-vn',
-}
-
-# Create a custom SSL context that doesn't verify certificates
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE
-
-# Configure yt-dlp with custom SSL context
-ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
-
-def extract_info(url, download=True):
-    """Extract info from URL using ytdl."""
-    return ytdl.extract_info(url, download=download)
-
-def extract_info_fallback(url, download=True):
-    """Extract info from URL using fallback options."""
-    fallback_options = ytdl_format_options.copy()
-    fallback_options.update({
-        'nocheckcertificate': True,
-        'extractor_retries': 5,
-        'fragment_retries': 5,
-        'retries': 5,
-        'skip_download': True,
-        'no_cookies': True,
-    })
-    fallback_ytdl = yt_dlp.YoutubeDL(fallback_options)
-    return fallback_ytdl.extract_info(url, download=download)
-
-# 20 minutes, in seconds
-DURATION_CEILING = 20 * 60
-DURATION_CEILING_STRING = '20mins'
-SONGS_PER_PAGE = 10
-
-def set_str_len(s: str, length: int):
-    '''Adds whitespace or trims string to enforce a specific size'''
-    return s.ljust(length)[:length]
-
-class Queue(list):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._current_song = None
-        self._skip_voters = []
-
-    def next_song(self):
-        self._current_song = self.pop(0)
-        return self._current_song
-
-    def clear(self):
-        super().clear()
-        self._current_song = None
-
-    def add_skip_vote(self, voter: discord.Member):
-        self._skip_voters.append(voter)
-
-    def clear_skip_votes(self):
-        self._skip_voters.clear()
-
-    @property
-    def skip_voters(self):
-        return self._skip_voters
-
-    @property
-    def current_song(self):
-        return self._current_song
-
-    def get_embed(self, song_id: int):
-        if song_id <= 0:
-            song = self.current_song
-        else:
-            song = self[song_id-1]
-
-        if len(song.description) > 300:
-            song['description'] = f'{song.description[:300]}...'
-
-        embed = discord.Embed(title="Audio Info")
-        embed.set_thumbnail(url=song.thumbnail)
-        embed.add_field(name='Song', value=song.title, inline=True)
-        embed.add_field(name='Uploader', value=song.uploader, inline=True)
-        embed.add_field(name='Duration', value=song.duration_formatted, inline=True)
-        embed.add_field(name='Description', value=song.description, inline=True)
-        embed.add_field(name='Upload Date', value=song.upload_date_formatted, inline=True)
-        embed.add_field(name='Views', value=song.views, inline=True)
-        embed.add_field(name='Likes', value=song.likes, inline=True)
-        embed.add_field(name='Dislikes', value=song.dislikes, inline=True)
-        embed.add_field(name='Requested By', value=song.requested_by_username, inline=True)
-
-        return embed
-
-class Song(dict):
-    def __init__(self, url: str, author: discord.Member):
-        super().__init__()
-        self.download_info(url, author)
-
-    @property
-    def url(self):
-        return self.get('url', None)
-
-    @property
-    def title(self):
-        return self.get('title', 'Unable To Fetch')
-
-    @property
-    def uploader(self):
-        return self.get('uploader', 'Unable To Fetch')
-
-    @property
-    def duration_raw(self):
-        return self.get('duration', 0)
-
-    @property
-    def duration_formatted(self):
-        minutes, seconds = self.duration_raw // 60, self.duration_raw % 60
-        return f'{minutes}m, {seconds}s'
-
-    @property
-    def description(self):
-        return self.get('description', 'Unable To Fetch')
-
-    @property
-    def upload_date_raw(self):
-        return self.get('upload_date', '01011970')
-
-    @property
-    def upload_date_formatted(self):
-        m, d, y = self.upload_date_raw[4:6], self.upload_date_raw[6:8], self.upload_date_raw[0:4]
-        return f'{m}/{d}/{y}'
-
-    @property
-    def views(self):
-        return self.get('view_count', 0)
-
-    @property
-    def likes(self):
-        return self.get('like_count', 0)
-
-    @property
-    def dislikes(self):
-        return self.get('dislike_count', 0)
-
-    @property
-    def thumbnail(self):
-        return self.get('thumbnail', 'http://i.imgur.com/dDTCO6e.png')
-
-    @property
-    def requested_by_username(self):
-        return self.get('requested_by', 'Unknown requester')
-
-    @property
-    def requested_by_id(self):
-        return self.get('requested_by_id', 1)
-
-    def download_info(self, url: str, author: discord.Member):
-        try:
-            # Use yt-dlp instead of youtube_dl
-            data = extract_info(url, download=False)
-            
-            if not url.startswith('https'):
-                data = extract_info(data['entries'][0]['webpage_url'], download=False)
-
-            self.update(data)
-            self['url'] = url
-            self['requested_by'] = str(author.name)
-            self['requested_by_id'] = author.id
-            
-        except Exception as e:
-            # Fallback to SSL-bypass method
-            try:
-                data = extract_info_fallback(url, download=False)
-                
-                if not url.startswith('https'):
-                    data = extract_info_fallback(data['entries'][0]['webpage_url'], download=False)
-
-                self.update(data)
-                self['url'] = url
-                self['requested_by'] = str(author.name)
-                self['requested_by_id'] = author.id
-                
-            except Exception as e2:
-                raise Exception(f"Failed to extract video info: {e2}")
+import re
 
 class Music(commands.Cog):
-    """Music commands for playing audio from various sources."""
+    """Music commands using LavaLink for better audio processing."""
 
     def __init__(self, bot):
         self.bot = bot
-        self.music_queues = {}
-        self.voice_clients = {}
+        self.bot.music = lavalink.Client(self.bot.user.id)
+        self.bot.music.add_node('127.0.0.1', 2333, 'youshallnotpass', 'us', 10)
+        self.bot.add_listener(self.bot.music.voice_update_handler, 'on_socket_response')
+        self.music = self.bot.music
+        self.lavalink_ready = False
 
-    def get_queue(self, guild):
-        """Get or create music queue for guild."""
-        if guild not in self.music_queues:
-            self.music_queues[guild] = Queue()
-        return self.music_queues[guild]
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Initialize LavaLink when bot is ready."""
+        self.lavalink_ready = True
+        print("🎵 Music system ready with LavaLink!")
+
+    def get_player(self, guild):
+        """Get or create a LavaLink player for the guild."""
+        return self.music.player_manager.get(guild.id)
 
     @commands.hybrid_command(name='join', description="Join a voice channel")
     async def join(self, ctx):
@@ -241,11 +35,16 @@ class Music(commands.Cog):
             return
 
         channel = ctx.author.voice.channel
-        if ctx.guild in self.voice_clients and self.voice_clients[ctx.guild] is not None:
-            return await self.voice_clients[ctx.guild].move_to(channel)
-
-        self.voice_clients[ctx.guild] = await channel.connect()
-        await ctx.send(f"✅ Joined {channel.name}")
+        player = self.get_player(ctx.guild)
+        
+        if player is None:
+            player = self.music.player_manager.create(ctx.guild.id, endpoint=str(ctx.guild.region))
+        
+        if not player.is_connected:
+            await player.connect(channel.id)
+            await ctx.send(f"✅ Joined {channel.name}")
+        else:
+            await ctx.send("✅ Already connected to a voice channel.")
 
     @commands.hybrid_command(name='play', description="Play a song from YouTube or other sources")
     @app_commands.describe(query="The song to play (URL or search term)")
@@ -255,73 +54,57 @@ class Music(commands.Cog):
             await ctx.send("❌ You are not connected to a voice channel.")
             return
 
-        music_queue = self.get_queue(ctx.guild)
-        voice = self.voice_clients.get(ctx.guild)
+        # Join voice channel if not already connected
+        if not self.get_player(ctx.guild) or not self.get_player(ctx.guild).is_connected:
+            await self.join(ctx)
 
+        player = self.get_player(ctx.guild)
+        
+        # Search for the track
         try:
-            channel = ctx.author.voice.channel
-        except:
-            await ctx.send("❌ You're not connected to a voice channel.")
-            return
-
-        if voice is not None and not self.client_in_same_channel(ctx.author, ctx.guild):
-            await ctx.send("❌ You're not in my voice channel.")
-            return
-
-        if not query.startswith('https://'):
-            query = f'ytsearch1:{query}'
-
-        try:
-            song = Song(query, ctx.author)
-            valid_song, song_err = self.song_error_check(song)
-
-            if not valid_song:
-                await ctx.send(f"❌ {song_err}")
+            # Check if it's a URL
+            if not query.startswith('http'):
+                query = f'ytsearch:{query}'
+            
+            results = await player.node.get_tracks(query)
+            
+            if not results or not results['tracks']:
+                await ctx.send("❌ No tracks found.")
                 return
 
-            if voice is None or not voice.is_connected():
-                self.voice_clients[ctx.guild] = await channel.connect()
-
-            music_queue.append(song)
-            await ctx.send(f'✅ Queued song: {song.title}')
-
-            await self.play_all_songs(ctx.guild)
-
+            track = results['tracks'][0]
+            
+            # Add track to queue
+            player.add(requester=ctx.author.id, track=track)
+            
+            embed = discord.Embed(title="🎵 Added to Queue", color=0x00ff00)
+            embed.add_field(name="Track", value=track.title, inline=False)
+            embed.add_field(name="Duration", value=str(timedelta(seconds=track.length // 1000)), inline=True)
+            embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
+            
+            if track.uri:
+                embed.add_field(name="URL", value=track.uri, inline=False)
+            
+            await ctx.send(embed=embed)
+            
+            # Start playing if not already playing
+            if not player.is_playing:
+                await player.play()
+                
         except Exception as e:
-            error_msg = f"❌ An error occurred while processing your song.\n```css\n[{e}]\n```"
-            
-            # Add troubleshooting information
-            if "certificate" in str(e).lower() or "ssl" in str(e).lower():
-                error_msg += "\n**SSL Certificate Error Detected!**\n"
-                error_msg += "**Solutions:**\n"
-                error_msg += "• Update yt-dlp: `pip install --upgrade yt-dlp`\n"
-                error_msg += "• Try a different song or URL\n"
-                error_msg += "• Check your internet connection\n"
-                error_msg += "• The bot has been configured to bypass SSL verification"
-            elif "sign in" in str(e).lower() or "login" in str(e).lower():
-                error_msg += "\n**Authentication Error Detected!**\n"
-                error_msg += "**Solutions:**\n"
-                error_msg += "• Update yt-dlp: `pip install --upgrade yt-dlp`\n"
-                error_msg += "• Try a different song or URL\n"
-                error_msg += "• The bot has been configured to bypass authentication"
-            else:
-                error_msg += "\n**Troubleshooting:**\n"
-                error_msg += "• Try updating yt-dlp: `pip install --upgrade yt-dlp`\n"
-                error_msg += "• Check your internet connection\n"
-                error_msg += "• Try a different song or URL"
-            
-            await ctx.send(error_msg)
+            await ctx.send(f"❌ Error playing track: {str(e)}")
 
     @commands.hybrid_command(name='pause', description="Pause the currently playing song")
     async def pause(self, ctx):
         """Pause the currently playing song."""
-        voice = self.voice_clients.get(ctx.guild)
-        if voice is None:
+        player = self.get_player(ctx.guild)
+        
+        if not player or not player.is_connected:
             await ctx.send("❌ I am not connected to a voice channel.")
             return
 
-        if voice.is_playing():
-            voice.pause()
+        if player.is_playing:
+            await player.set_pause(True)
             await ctx.send("⏸️ Paused the music.")
         else:
             await ctx.send("❌ I am not playing anything.")
@@ -329,13 +112,14 @@ class Music(commands.Cog):
     @commands.hybrid_command(name='resume', description="Resume the currently paused song")
     async def resume(self, ctx):
         """Resume the currently paused song."""
-        voice = self.voice_clients.get(ctx.guild)
-        if voice is None:
+        player = self.get_player(ctx.guild)
+        
+        if not player or not player.is_connected:
             await ctx.send("❌ I am not connected to a voice channel.")
             return
 
-        if voice.is_paused():
-            voice.resume()
+        if player.is_paused:
+            await player.set_pause(False)
             await ctx.send("▶️ Resumed the music.")
         else:
             await ctx.send("❌ I am not paused.")
@@ -344,290 +128,162 @@ class Music(commands.Cog):
     @commands.has_permissions(ban_members=True)
     async def stop(self, ctx):
         """Stop playing and clear the queue."""
-        voice = self.voice_clients.get(ctx.guild)
-        queue = self.music_queues.get(ctx.guild)
+        player = self.get_player(ctx.guild)
+        
+        if not player or not player.is_connected:
+            await ctx.send("❌ I am not connected to a voice channel.")
+            return
 
-        if self.client_in_same_channel(ctx.author, ctx.guild):
-            if voice:
-                voice.stop()
-            if queue:
-                queue.clear()
-            self.voice_clients[ctx.guild] = None
-            await ctx.send("⏹️ Stopping playback")
-            if voice:
-                await voice.disconnect()
-        else:
-            await ctx.send("❌ You're not in a voice channel with me.")
+        player.queue.clear()
+        await player.stop()
+        await ctx.send("⏹️ Stopped playback and cleared queue.")
 
-    @commands.hybrid_command(name='skip', description="Vote to skip the currently playing song")
+    @commands.hybrid_command(name='skip', description="Skip the currently playing song")
     async def skip(self, ctx):
-        """Vote to skip the currently playing song."""
-        voice = self.voice_clients.get(ctx.guild)
-        queue = self.music_queues.get(ctx.guild)
-
-        if not self.client_in_same_channel(ctx.author, ctx.guild):
-            await ctx.send("❌ You're not in a voice channel with me.")
-            return
-
-        if voice is None or not voice.is_playing():
-            await ctx.send("❌ I'm not playing a song right now.")
-            return
-
-        if ctx.author in queue.skip_voters:
-            await ctx.send("❌ You've already voted to skip this song.")
-            return
-
-        channel = ctx.author.voice.channel
-        required_votes = round(len(channel.members) / 2)
-
-        queue.add_skip_vote(ctx.author)
-
-        if len(queue.skip_voters) >= required_votes:
-            await ctx.send('⏭️ Skipping song after successful vote.')
-            voice.stop()
-        else:
-            await ctx.send(f'✅ You voted to skip this song. {required_votes-len(queue.skip_voters)} more votes are required.')
-
-    @commands.hybrid_command(name='fskip', description="Force skip the currently playing song")
-    @commands.has_permissions(ban_members=True)
-    async def fskip(self, ctx):
-        """Force skip the currently playing song."""
-        voice = self.voice_clients.get(ctx.guild)
-
-        if not self.client_in_same_channel(ctx.author, ctx.guild):
-            await ctx.send("❌ You're not in a voice channel with me.")
-        elif voice is None or not voice.is_playing():
-            await ctx.send("❌ I'm not playing a song right now.")
-        else:
-            voice.stop()
-            await ctx.send("⏭️ Force skipped the song.")
-
-    @commands.hybrid_command(name='songinfo', description="Show detailed information about a song")
-    @app_commands.describe(song_index="Song index in queue (0 for current song)")
-    async def songinfo(self, ctx, song_index: int = 0):
-        """Show detailed information about a song."""
-        queue = self.music_queues.get(ctx.guild)
-
-        if not queue or song_index not in range(len(queue)+1):
-            await ctx.send("❌ A song does not exist at that index in the queue.")
-            return
+        """Skip the currently playing song."""
+        player = self.get_player(ctx.guild)
         
-        embed = queue.get_embed(song_index)
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(name='remove', description="Remove a song from the queue")
-    @app_commands.describe(song_id="Song ID to remove (leave empty for your last song)")
-    async def remove(self, ctx, song_id: int = None):
-        """Remove a song from the queue."""
-        if not self.client_in_same_channel(ctx.author, ctx.guild):
-            await ctx.send("❌ You're not in a voice channel with me.")
+        if not player or not player.is_connected:
+            await ctx.send("❌ I am not connected to a voice channel.")
             return
 
-        queue = self.music_queues.get(ctx.guild)
-
-        if song_id is None:
-            for index, song in reversed(list(enumerate(queue))):
-                if ctx.author.id == song.requested_by_id:
-                    queue.pop(index)
-                    await ctx.send(f'✅ Song "{song.title}" removed from queue.')
-                    return
-            await ctx.send("❌ You haven't requested any songs in the queue.")
-        else:
-            try:
-                song = queue[song_id-1]
-            except IndexError:
-                await ctx.send('❌ An invalid index was provided.')
-                return
-
-            if ctx.author.id == song.requested_by_id:
-                queue.pop(song_id-1)
-                await ctx.send(f'✅ Song {song.title} removed from queue.')
-            else:
-                await ctx.send('❌ You cannot remove a song requested by someone else.')
-
-    @commands.hybrid_command(name='fremove', description="Force remove a song from the queue")
-    @commands.has_permissions(ban_members=True)
-    @app_commands.describe(song_id="Song ID to remove")
-    async def fremove(self, ctx, song_id: int):
-        """Force remove a song from the queue."""
-        queue = self.music_queues.get(ctx.guild)
-
-        if not self.client_in_same_channel(ctx.author, ctx.guild):
-            await ctx.send('❌ You\'re not in a voice channel with me.')
+        if not player.is_playing:
+            await ctx.send("❌ I am not playing anything.")
             return
-        
-        if song_id is None or song_id <= 0:
-            await ctx.send('❌ You need to specify a song by its queue index.')
-            return
-        
-        try:
-            song = queue[song_id-1]
-        except IndexError:
-            await ctx.send('❌ A song does not exist at this queue index.')
-            return
-        
-        queue.pop(song_id-1)
-        await ctx.send(f'✅ Removed {song.title} from the queue.')
+
+        await player.skip()
+        await ctx.send("⏭️ Skipped the current song.")
 
     @commands.hybrid_command(name='queue', description="Show the music queue")
-    @app_commands.describe(page="Page number to show")
-    async def queue(self, ctx, page: int = 1):
+    async def queue(self, ctx):
         """Show the music queue."""
-        queue = self.music_queues.get(ctx.guild)
-
-        if not self.client_in_same_channel(ctx.author, ctx.guild):
-            await ctx.send('❌ You\'re not in a voice channel with me.')
-            return
+        player = self.get_player(ctx.guild)
         
-        if not len(queue):
-            await ctx.send('📭 I don\'t have anything in my queue right now.')
+        if not player or not player.queue:
+            await ctx.send("📭 The queue is empty.")
             return
 
-        if len(queue) < SONGS_PER_PAGE*(page-1):
-            await ctx.send('❌ I don\'t have that many pages in my queue.')
+        embed = discord.Embed(title="🎵 Music Queue", color=0x00ff00)
+        
+        # Current track
+        if player.current:
+            embed.add_field(
+                name="🎶 Now Playing",
+                value=f"{player.current.title} - {str(timedelta(seconds=player.current.length // 1000))}",
+                inline=False
+            )
+        
+        # Queue
+        queue_text = ""
+        for i, track in enumerate(player.queue[:10], 1):
+            duration = str(timedelta(seconds=track.length // 1000))
+            queue_text += f"{i}. {track.title} - {duration}\n"
+        
+        if queue_text:
+            embed.add_field(name="📋 Up Next", value=queue_text, inline=False)
+        
+        if len(player.queue) > 10:
+            embed.add_field(name="...", value=f"And {len(player.queue) - 10} more tracks", inline=False)
+        
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(name='now', description="Show currently playing song")
+    async def now(self, ctx):
+        """Show currently playing song."""
+        player = self.get_player(ctx.guild)
+        
+        if not player or not player.current:
+            await ctx.send("❌ I am not playing anything.")
             return
 
-        to_send = f'```\n    {set_str_len("Song", 66)}{set_str_len("Uploader", 36)}Requested By\n'
-
-        for pos, song in enumerate(queue[:SONGS_PER_PAGE*page], start=SONGS_PER_PAGE*(page-1)):
-            title = set_str_len(song.title, 65)
-            uploader = set_str_len(song.uploader, 35)
-            requested_by = song.requested_by_username
-            to_send += f'{set_str_len(f"{pos+1})",4)}{title}|{uploader}|{requested_by}\n'
-
-        await ctx.send(to_send + '```')
+        embed = discord.Embed(title="🎶 Now Playing", color=0x00ff00)
+        embed.add_field(name="Track", value=player.current.title, inline=False)
+        embed.add_field(name="Duration", value=str(timedelta(seconds=player.current.length // 1000)), inline=True)
+        
+        if player.current.uri:
+            embed.add_field(name="URL", value=player.current.uri, inline=False)
+        
+        await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='leave', description="Leave the voice channel")
     async def leave(self, ctx):
         """Leave the voice channel."""
-        voice = self.voice_clients.get(ctx.guild)
-        if voice is None:
+        player = self.get_player(ctx.guild)
+        
+        if not player or not player.is_connected:
             await ctx.send("❌ I am not connected to a voice channel.")
             return
 
-        await voice.disconnect()
-        self.voice_clients[ctx.guild] = None
+        await player.disconnect()
         await ctx.send("👋 Left the voice channel.")
 
-    @commands.hybrid_command(name='fixmusic', description="Update yt-dlp to fix music issues")
-    async def fixmusic(self, ctx):
-        """Update yt-dlp to fix music issues."""
-        if not ctx.author.guild_permissions.administrator:
-            await ctx.send("❌ You need administrator permissions to use this command.")
+    @commands.hybrid_command(name='volume', description="Set the volume")
+    @app_commands.describe(volume="Volume level (0-100)")
+    async def volume(self, ctx, volume: int):
+        """Set the volume."""
+        if not 0 <= volume <= 100:
+            await ctx.send("❌ Volume must be between 0 and 100.")
             return
 
-        await ctx.send("🔄 Updating yt-dlp... This may take a moment.")
+        player = self.get_player(ctx.guild)
         
-        try:
-            import subprocess
-            import sys
-            
-            # Update yt-dlp
-            result = subprocess.run([
-                sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"
-            ], capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                await ctx.send("✅ yt-dlp updated successfully! Try playing music again.")
-            else:
-                await ctx.send(f"❌ Failed to update yt-dlp:\n```{result.stderr}```")
-                
-        except Exception as e:
-            await ctx.send(f"❌ Error updating yt-dlp: {e}")
-
-    async def play_all_songs(self, guild: discord.Guild):
-        """Play all songs in the queue."""
-        queue = self.music_queues.get(guild)
-
-        # Play next song until queue is empty
-        while len(queue) > 0:
-            await self.wait_for_end_of_song(guild)
-
-            song = queue.next_song()
-
-            await self.play_song(guild, song)
-
-        # Disconnect after song queue is empty
-        await self.inactivity_disconnect(guild)
-
-    async def play_song(self, guild: discord.Guild, song: Song):
-        """Downloads and starts playing a YouTube video's audio."""
-        audio_dir = os.path.join('.', 'audio')
-        audio_path = os.path.join(audio_dir, f'{guild.id}.mp3')
-        voice = self.voice_clients.get(guild)
-
-        queue = self.music_queues.get(guild)
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'noplaylist': True,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': audio_path,
-            'nocheckcertificate': True,  # SSL bypass
-            'no_cookies': True,  # Avoid authentication prompts
-        }
-
-        Path(audio_dir).mkdir(parents=True, exist_ok=True)
-
-        try:
-            os.remove(audio_path)
-        except OSError:
-            pass
-        
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([f'{song.url}'])
-        except Exception as e:
-            print(f'Error downloading song: {e}')
-            await self.play_all_songs(guild)
+        if not player or not player.is_connected:
+            await ctx.send("❌ I am not connected to a voice channel.")
             return
+
+        await player.set_volume(volume)
+        await ctx.send(f"🔊 Volume set to {volume}%")
+
+    @commands.hybrid_command(name='shuffle', description="Shuffle the queue")
+    async def shuffle(self, ctx):
+        """Shuffle the queue."""
+        player = self.get_player(ctx.guild)
         
-        voice.play(discord.FFmpegPCMAudio(audio_path))
-        queue.clear_skip_votes()
+        if not player or not player.queue:
+            await ctx.send("❌ The queue is empty.")
+            return
 
-    async def wait_for_end_of_song(self, guild: discord.Guild):
-        """Wait for the current song to finish."""
-        voice = self.voice_clients.get(guild)
-        while voice.is_playing():
-            await asyncio.sleep(1)
+        player.queue.shuffle()
+        await ctx.send("🔀 Queue shuffled!")
 
-    async def inactivity_disconnect(self, guild: discord.Guild):
-        """If a song is not played for 5 minutes, automatically disconnects bot from server."""
-        voice = self.voice_clients.get(guild)
-        queue = self.music_queues.get(guild)
-        last_song = queue.current_song
-
-        await asyncio.sleep(300)
-        if queue.current_song == last_song:
-            await voice.disconnect()
-
-    def client_in_same_channel(self, author: discord.Member, guild: discord.Guild):
-        """Checks to see if a client is in the same channel as the bot."""
-        voice = self.voice_clients.get(guild)
-
-        try:
-            channel = author.voice.channel
-        except AttributeError:
-            return False
+    @commands.hybrid_command(name='clear', description="Clear the queue")
+    @commands.has_permissions(ban_members=True)
+    async def clear(self, ctx):
+        """Clear the queue."""
+        player = self.get_player(ctx.guild)
         
-        return voice is not None and voice.is_connected() and channel == voice.channel
+        if not player or not player.queue:
+            await ctx.send("❌ The queue is already empty.")
+            return
 
-    @staticmethod
-    def song_error_check(song: Song):
-        """Checks song properties to ensure that the song is both valid and doesn't match any filtered properties"""
-        if song.url is None:
-            return False, 'Invalid URL provided or no video found.'
-        
-        if song.get('is_live', True):
-            return False, 'Invalid video - either live stream or unsupported website.'
+        player.queue.clear()
+        await ctx.send("🗑️ Queue cleared!")
 
-        if song.duration_raw > DURATION_CEILING:
-            return False, f'Video is too long. Keep it under {DURATION_CEILING_STRING}.'
+    @commands.hybrid_command(name='remove', description="Remove a track from the queue")
+    @app_commands.describe(position="Position in queue (1, 2, 3, etc.)")
+    async def remove(self, ctx, position: int):
+        """Remove a track from the queue."""
+        player = self.get_player(ctx.guild)
         
-        return True, None
+        if not player or not player.queue:
+            await ctx.send("❌ The queue is empty.")
+            return
+
+        if position < 1 or position > len(player.queue):
+            await ctx.send(f"❌ Invalid position. Queue has {len(player.queue)} tracks.")
+            return
+
+        track = player.queue.pop(position - 1)
+        await ctx.send(f"✅ Removed '{track.title}' from the queue.")
+
+    @commands.Cog.listener()
+    async def on_lavalink_track_end(self, player, track, reason):
+        """Handle track end events."""
+        if not player.queue:
+            # No more tracks, disconnect after 60 seconds
+            await asyncio.sleep(60)
+            if not player.queue and not player.is_playing:
+                await player.disconnect()
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
@@ -637,13 +293,13 @@ class Music(commands.Cog):
 
         # If the bot is alone in a voice channel, disconnect after 60 seconds
         if before.channel and after.channel != before.channel:
-            voice = discord.utils.get(self.bot.voice_clients, guild=member.guild)
-            if voice and voice.channel == before.channel:
+            player = self.get_player(member.guild)
+            if player and player.is_connected and player.channel_id == before.channel.id:
                 members = [m for m in before.channel.members if not m.bot]
                 if not members:
                     await asyncio.sleep(60)
-                    if voice.channel == before.channel:
-                        await voice.disconnect()
+                    if player.is_connected and player.channel_id == before.channel.id:
+                        await player.disconnect()
 
 async def setup(bot):
     await bot.add_cog(Music(bot))

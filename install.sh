@@ -6,184 +6,78 @@
 echo "🤖 Rat Bot Installation Script"
 echo "=============================="
 
-# Check if Python 3.8+ is installed
-echo "Checking Python version..."
-python_version=$(python3 --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
-if [[ -z "$python_version" ]]; then
-    echo "❌ Python 3.8+ is required but not found."
-    echo "Please install Python 3.8 or higher and try again."
+# Check if Python is installed
+if ! command -v python3 &> /dev/null; then
+    echo "❌ Python 3 is not installed. Please install Python 3.8 or higher first."
     exit 1
 fi
 
-required_version="3.8"
-if [[ "$(printf '%s\n' "$required_version" "$python_version" | sort -V | head -n1)" != "$required_version" ]]; then
-    echo "❌ Python $python_version found, but Python 3.8+ is required."
-    exit 1
-fi
-
-echo "✅ Python $python_version found"
-
-# Check if pip is installed
-if ! command -v pip3 &> /dev/null; then
-    echo "❌ pip3 is not installed. Please install pip and try again."
-    exit 1
-fi
-
-echo "✅ pip3 found"
-
-# Check if FFmpeg is installed
-echo "Checking for FFmpeg..."
-if ! command -v ffmpeg &> /dev/null; then
-    echo "⚠️  FFmpeg not found. Music functionality requires FFmpeg."
-    echo "Please install FFmpeg:"
-    echo "  Ubuntu/Debian: sudo apt install ffmpeg"
-    echo "  macOS: brew install ffmpeg"
-    echo "  CentOS/RHEL: sudo yum install ffmpeg"
-    echo ""
-    read -p "Continue without FFmpeg? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Installation cancelled. Please install FFmpeg and try again."
-        exit 1
-    fi
-else
-    echo "✅ FFmpeg found"
-fi
+# Check Python version
+PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+echo "✅ Python $PYTHON_VERSION detected"
 
 # Create virtual environment
-echo "Creating virtual environment..."
-if [ -d "venv" ]; then
-    echo "Virtual environment already exists, removing..."
-    rm -rf venv
-fi
-
+echo "📦 Creating virtual environment..."
 python3 -m venv venv
-echo "✅ Virtual environment created"
 
 # Activate virtual environment
-echo "Activating virtual environment..."
+echo "🔧 Activating virtual environment..."
 source venv/bin/activate
 
 # Upgrade pip
-echo "Upgrading pip..."
+echo "⬆️ Upgrading pip..."
 pip install --upgrade pip
 
-# Install requirements
-echo "Installing Python dependencies..."
+# Install Python dependencies
+echo "📥 Installing Python dependencies..."
 pip install -r requirements.txt
 
-# Update yt-dlp to latest version to prevent SSL issues
-echo "Updating yt-dlp to latest version..."
-pip install --upgrade yt-dlp
-
-# Create .env file if it doesn't exist
+# Check if .env file exists
 if [ ! -f ".env" ]; then
-    echo "Creating .env file..."
-    cp example.env .env
-    echo "✅ .env file created from template"
-    echo "⚠️  Please edit .env file and add your Discord bot token!"
-else
-    echo "✅ .env file already exists"
+    echo "📝 Creating .env file..."
+    cat > .env << 'EOF'
+# Discord Bot Configuration
+DISCORD_TOKEN=your_discord_token_here
+DISCORD_PREFIX=!
+
+# Database Configuration
+DATABASE_PATH=data/bot.db
+
+# Logging Configuration
+LOG_LEVEL=INFO
+EOF
+    echo "⚠️ Please edit .env file and add your Discord bot token!"
 fi
 
-# Create database directory
-echo "Setting up database..."
+# Create data directory
+echo "📁 Creating data directory..."
 mkdir -p data
-touch data/bot.db
 
-# Set up database
-echo "Initializing database..."
-python3 -c "
-import sqlite3
-import os
+# Check if FFmpeg is installed
+if ! command -v ffmpeg &> /dev/null; then
+    echo "⚠️ FFmpeg is not installed. Music functionality may not work properly."
+    echo "📥 To install FFmpeg:"
+    echo "   Ubuntu/Debian: sudo apt install ffmpeg"
+    echo "   macOS: brew install ffmpeg"
+    echo "   Windows: Download from https://ffmpeg.org/download.html"
+fi
 
-# Create database connection
-conn = sqlite3.connect('data/bot.db')
-cursor = conn.cursor()
-
-# Create mod_logs table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS mod_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        guild_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        moderator_id INTEGER NOT NULL,
-        action_type TEXT NOT NULL,
-        reason TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-
-# Create user_warnings table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS user_warnings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        guild_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        moderator_id INTEGER NOT NULL,
-        reason TEXT NOT NULL,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-
-# Create custom_commands table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS custom_commands (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        guild_id INTEGER NOT NULL,
-        command_name TEXT NOT NULL,
-        response TEXT NOT NULL,
-        created_by INTEGER NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-
-# Create server_settings table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS server_settings (
-        guild_id INTEGER PRIMARY KEY,
-        mod_log_channel INTEGER,
-        welcome_channel INTEGER,
-        welcome_message TEXT,
-        prefix TEXT DEFAULT '!',
-        auto_role INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-
-# Create user_stats table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS user_stats (
-        user_id INTEGER NOT NULL,
-        guild_id INTEGER NOT NULL,
-        messages_sent INTEGER DEFAULT 0,
-        commands_used INTEGER DEFAULT 0,
-        last_message DATETIME,
-        joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (user_id, guild_id)
-    )
-''')
-
-conn.commit()
-conn.close()
-print('✅ Database initialized successfully')
-"
-
-# Create logs directory
-mkdir -p logs
-
-# Make the script executable
-chmod +x run.sh
+# Install LavaLink
+echo "🎵 Installing LavaLink server..."
+chmod +x install_lavalink.sh
+./install_lavalink.sh
 
 echo ""
-echo "🎉 Installation completed successfully!"
+echo "✅ Installation complete!"
 echo ""
-echo "Next steps:"
-echo "1. Edit the .env file and add your Discord bot token"
-echo "2. Run the bot with: ./run.sh"
-echo "3. Or manually with: source venv/bin/activate && python bot.py"
+echo "🎵 To start the bot:"
+echo "   source venv/bin/activate"
+echo "   python bot.py"
 echo ""
-echo "For help, check the README.md file"
+echo "🎵 To start LavaLink server (in a separate terminal):"
+echo "   ./start_lavalink.sh"
 echo ""
-echo "💡 If you encounter SSL certificate errors with music:"
-echo "   Run: python update_ytdlp.py" 
+echo "📝 Don't forget to:"
+echo "   1. Edit .env file with your Discord bot token"
+echo "   2. Start LavaLink server before running the bot"
+echo "   3. Make sure Java 11+ is installed for LavaLink" 

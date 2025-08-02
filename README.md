@@ -1,596 +1,286 @@
-# Rat Bot - Discord Bot
+# Rat Bot 🤖
 
-A feature-rich Discord bot built with Discord.py that provides useful server management and utility commands, organized into modular cogs for easy maintenance. Includes a SQLite database for persistent data storage and mod logs. **Supports both slash commands and legacy prefix commands!** **Now with sharding support for large-scale deployments!**
+A feature-rich Discord bot built with Discord.py, featuring moderation tools, music playback, custom commands, and more!
 
-## Features
+## ✨ Features
 
-- **Sharding Support**: Automatic and manual sharding for bots with 2500+ servers
-- **Hybrid Commands**: All commands work as both slash commands and legacy prefix commands
-- **Music System**: Full music player with queue management, YouTube support, and voice controls
-- **Modular Design**: Commands organized into separate cog files by category
-- **Database Integration**: SQLite database for mod logs, warnings, custom commands, and user stats
-- **Auto-Installation**: Shell script for easy setup and installation
-- **Easy Updates**: Update script for keeping the bot current without reinstallation
-- **Utility Commands**: Ping, info, help, echo
-- **Server Management**: Clear messages, kick, ban, unban, warn, warnings
-- **Information Commands**: User info, server info, role info, channel info
-- **Fun Commands**: 8ball, coinflip, dice, rock-paper-scissors, choose, reverse, emojify
-- **Custom Commands**: Create and manage server-specific custom commands
-- **Moderation Logs**: Automatic logging of all moderation actions
-- **Error Handling**: Comprehensive error handling and logging
-- **Modern UI**: Rich embeds for all responses
-- **Permission System**: Proper permission checks for admin commands
+- **Moderation System** - Kick, ban, mute, warn users with logging
+- **Music System** - High-quality audio playback using LavaLink
+- **Custom Commands** - Server-specific custom commands
+- **User Statistics** - Track user activity and engagement
+- **Server Settings** - Configurable welcome messages, auto-roles, and more
+- **Hybrid Commands** - Both slash commands and legacy prefix commands
+- **Sharding Support** - Handle large numbers of servers efficiently
+- **Database Integration** - Persistent data storage with SQLite
+- **Auto-Installation** - Easy setup scripts for all platforms
 
-## Quick Start
+## 🎵 Music System
 
-### 1. Auto-Installation (Recommended)
+The bot uses **LavaLink** for high-quality audio processing:
 
+### **Why LavaLink?**
+- ✅ **Better Performance** - Dedicated audio server handles all processing
+- ✅ **No SSL Issues** - LavaLink handles YouTube API changes automatically
+- ✅ **Multiple Sources** - YouTube, SoundCloud, Bandcamp, Twitch, Vimeo
+- ✅ **Higher Quality** - Better audio quality and stability
+- ✅ **No Authentication** - No sign-in prompts or certificate issues
+
+### **Music Commands**
+| Command | Description |
+|---------|-------------|
+| `/join` | Join a voice channel |
+| `/play <song>` | Play a song (URL or search) |
+| `/pause` | Pause current song |
+| `/resume` | Resume paused song |
+| `/skip` | Skip current song |
+| `/stop` | Stop and clear queue |
+| `/queue` | Show music queue |
+| `/now` | Show currently playing |
+| `/volume <0-100>` | Set volume |
+| `/shuffle` | Shuffle queue |
+| `/clear` | Clear queue |
+| `/remove <position>` | Remove track from queue |
+| `/leave` | Leave voice channel |
+
+## 🚀 Quick Start
+
+### **Prerequisites**
+- Python 3.8 or higher
+- Java 11 or higher (for LavaLink)
+- FFmpeg (optional, for additional audio formats)
+
+### **Installation**
+
+#### **Linux/macOS:**
 ```bash
-# Make install script executable
+# Clone the repository
+git clone <repository-url>
+cd rat-bot
+
+# Run installation script
 chmod +x install.sh
-
-# Run the installation script
 ./install.sh
-
-# Edit .env file with your bot token
-nano .env
-
-# Run the bot (choose one option)
-./run.sh                    # Single instance
-./run.sh --sharded          # Automatic sharding
-./run.sh --shard-manager 4  # Manual sharding with 4 shards
-```
-
-### 2. Manual Installation
-
-Follow the detailed setup instructions below.
-
-## Easy Updates
-
-### Update Scripts
-
-The bot includes easy update scripts that don't require reinstallation:
-
-#### **Linux/Mac:**
-```bash
-./update.sh
 ```
 
 #### **Windows:**
 ```cmd
-update.bat
+# Clone the repository
+git clone <repository-url>
+cd rat-bot
+
+# Run installation script
+install.bat
 ```
 
-#### **Manual Update:**
-```bash
-python update.py
+### **Setup**
+
+1. **Edit `.env` file** with your Discord bot token:
+   ```env
+   DISCORD_TOKEN=your_discord_token_here
+   DISCORD_PREFIX=!
+   ```
+
+2. **Start LavaLink server** (in a separate terminal):
+   ```bash
+   # Linux/macOS
+   ./start_lavalink.sh
+   
+   # Windows
+   start_lavalink.bat
+   ```
+
+3. **Start the bot**:
+   ```bash
+   # Linux/macOS
+   source venv/bin/activate
+   python bot.py
+   
+   # Windows
+   venv\Scripts\activate.bat
+   python bot.py
+   ```
+
+## 📋 Manual Installation
+
+If you prefer manual installation:
+
+1. **Install Python dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Install LavaLink:**
+   ```bash
+   # Linux/macOS
+   ./install_lavalink.sh
+   
+   # Windows
+   install_lavalink.bat
+   ```
+
+3. **Start LavaLink server:**
+   ```bash
+   cd lavalink
+   java -jar Lavalink.jar
+   ```
+
+4. **Configure and run the bot:**
+   ```bash
+   # Edit .env file with your token
+   python bot.py
+   ```
+
+## 🎵 LavaLink Configuration
+
+The bot automatically connects to LavaLink with these settings:
+- **Host:** 127.0.0.1
+- **Port:** 2333
+- **Password:** youshallnotpass
+
+### **LavaLink Features:**
+- **YouTube Search** - Search and play YouTube videos
+- **Multiple Sources** - Support for various audio platforms
+- **High Quality** - Better audio processing than direct downloads
+- **No Authentication** - No SSL certificate or login issues
+- **Auto-Reconnect** - Automatic reconnection on disconnection
+
+## 🔧 Configuration
+
+### **Environment Variables (.env)**
+```env
+# Discord Bot Configuration
+DISCORD_TOKEN=your_discord_token_here
+DISCORD_PREFIX=!
+
+# Database Configuration
+DATABASE_PATH=data/bot.db
+
+# Logging Configuration
+LOG_LEVEL=INFO
 ```
 
-### What the Update Script Does
+### **Bot Permissions**
+The bot needs these permissions:
+- **Send Messages**
+- **Use Slash Commands**
+- **Connect** (for voice)
+- **Speak** (for voice)
+- **Manage Messages** (for moderation)
+- **Kick Members** (for moderation)
+- **Ban Members** (for moderation)
 
-- **📦 Updates Dependencies**: Updates all Python packages to latest versions
-- **🗄️ Database Backup**: Creates automatic backup before updates
-- **📡 Git Integration**: Pulls latest code if using git repository
-- **🔧 Schema Updates**: Updates database schema if needed
-- **📝 Update Logging**: Logs all update activities
-- **🛡️ Safety Checks**: Validates environment before updating
+## 📁 Project Structure
 
-### Update Features
-
-- **Non-Destructive**: Preserves all your data and settings
-- **Automatic Backup**: Creates timestamped database backups
-- **Dependency Management**: Updates all packages including yt-dlp
-- **Schema Migration**: Automatically adds new database tables
-- **Version Tracking**: Shows current and updated versions
-- **Error Recovery**: Graceful handling of update failures
-
-## Sharding Support
-
-### What is Sharding?
-
-Sharding is a technique used by Discord bots to handle large numbers of servers (2500+) efficiently. When a bot joins more than 2500 servers, Discord requires the bot to use sharding to distribute the load across multiple connections.
-
-### Sharding Options
-
-#### 1. **Automatic Sharding** (Recommended for most users)
-```bash
-./run.sh --sharded
 ```
-- Discord.py automatically determines the optimal number of shards
-- Single process handles all shards
-- Best for bots with moderate server counts
-
-#### 2. **Manual Sharding** (For very large bots)
-```bash
-./run.sh --shard-manager 4
-```
-- Manually specify the number of shards
-- Multiple processes for better resource distribution
-- Includes automatic crash recovery and monitoring
-- Best for bots with 10,000+ servers
-
-#### 3. **Single Instance** (For small bots)
-```bash
-./run.sh
-```
-- No sharding, single bot instance
-- Best for bots with fewer than 2500 servers
-
-### Sharding Configuration
-
-You can configure sharding in `config.py`:
-
-```python
-# For automatic sharding (recommended)
-SHARD_COUNT = None
-SHARD_IDS = None
-
-# For manual sharding
-SHARD_COUNT = 4
-SHARD_IDS = [0, 1, 2, 3]
+rat-bot/
+├── bot.py                 # Main bot file
+├── config.py              # Configuration settings
+├── requirements.txt       # Python dependencies
+├── .env                  # Environment variables
+├── cogs/                 # Bot cogs (modules)
+│   ├── admin.py         # Admin commands
+│   ├── moderation.py    # Moderation commands
+│   ├── music.py         # Music commands (LavaLink)
+│   ├── fun.py           # Fun commands
+│   └── utility.py       # Utility commands
+├── data/                 # Database and data files
+├── lavalink/            # LavaLink server files
+│   ├── Lavalink.jar     # Lavalink server
+│   └── application.yml  # Lavalink configuration
+├── install.sh           # Linux/macOS installation
+├── install.bat          # Windows installation
+├── install_lavalink.sh  # LavaLink installation (Linux/macOS)
+├── install_lavalink.bat # LavaLink installation (Windows)
+├── start_lavalink.sh    # Start LavaLink (Linux/macOS)
+├── start_lavalink.bat   # Start LavaLink (Windows)
+├── run.sh               # Run bot (Linux/macOS)
+├── run.bat              # Run bot (Windows)
+├── update.py            # Update script
+├── update.sh            # Update script (Linux/macOS)
+├── update.bat           # Update script (Windows)
+└── README.md            # This file
 ```
 
-### Shard Manager Features
+## 🎵 Music System Details
 
-The shard manager provides:
-- **Automatic crash recovery**: Restarts crashed shards
-- **Process monitoring**: Tracks shard health
-- **Graceful shutdown**: Properly stops all shards
-- **Status reporting**: Shows shard status every 30 seconds
-- **Resource management**: Efficient process handling
+### **LavaLink Integration**
+The bot uses LavaLink for all audio processing, which provides:
+- **Better Performance** - Dedicated audio server
+- **No SSL Issues** - Handles YouTube API changes automatically
+- **Multiple Sources** - YouTube, SoundCloud, Bandcamp, Twitch, Vimeo
+- **Higher Quality** - Better audio processing than direct downloads
+- **Auto-Reconnect** - Automatic reconnection on disconnection
 
-### When to Use Sharding
-
-- **< 2500 servers**: No sharding needed
-- **2500-10,000 servers**: Automatic sharding recommended
-- **> 10,000 servers**: Manual sharding with shard manager recommended
-
-## Commands
-
-**All commands work with both slash commands (`/command`) and legacy prefix commands (`!command`)**
-
-### General Commands
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `ping` | Check bot latency | `/ping` or `!ping` |
-| `info` | Display bot information | `/info` or `!info` |
-| `help` | Show help menu | `/help` or `!help` |
-| `echo` | Make bot repeat message | `/echo <message>` or `!echo <message>` |
-
-### Music Commands
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `join` | Join a voice channel | `/join` or `!join` |
-| `play` | Play a song from YouTube | `/play <song>` or `!play <song>` |
-| `pause` | Pause the current song | `/pause` or `!pause` |
-| `resume` | Resume the paused song | `/resume` or `!resume` |
-| `skip` | Skip the current song | `/skip` or `!skip` |
-| `stop` | Stop playing and clear queue | `/stop` or `!stop` |
-| `queue` | Show the music queue | `/queue` or `!queue` |
-| `nowplaying` | Show current song | `/nowplaying` or `!nowplaying` |
-| `volume` | Set music volume | `/volume <0-100>` or `!volume <0-100>` |
-| `leave` | Leave voice channel | `/leave` or `!leave` |
-| `fixmusic` | Update yt-dlp (Admin) | `/fixmusic` or `!fixmusic` |
-
-### Moderation Commands
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `clear` | Clear messages (Admin) | `/clear [amount]` or `!clear [amount]` |
-| `kick` | Kick a member (Admin) | `/kick @user [reason]` or `!kick @user [reason]` |
-| `ban` | Ban a member (Admin) | `/ban @user [reason]` or `!ban @user [reason]` |
-| `unban` | Unban a user (Admin) | `/unban <user_id>` or `!unban <user_id>` |
-| `warn` | Warn a member (Mod) | `/warn @user <reason>` or `!warn @user <reason>` |
-| `warnings` | Check user warnings (Mod) | `/warnings @user` or `!warnings @user` |
-| `clearwarnings` | Clear user warnings (Mod) | `/clearwarnings @user` or `!clearwarnings @user` |
-| `modlogs` | View moderation logs (Mod) | `/modlogs [@user] [limit]` or `!modlogs [@user] [limit]` |
-| `setmodlog` | Set mod log channel (Admin) | `/setmodlog #channel` or `!setmodlog #channel` |
-
-### Custom Commands
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `addcommand` | Add custom command (Mod) | `/addcommand <name> <response>` or `!addcommand <name> <response>` |
-| `delcommand` | Delete custom command (Mod) | `/delcommand <name>` or `!delcommand <name>` |
-| `editcommand` | Edit custom command (Mod) | `/editcommand <name> <new_response>` or `!editcommand <name> <new_response>` |
-| `listcommands` | List custom commands | `/listcommands` or `!listcommands` |
-
-### Information Commands
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `userinfo` | Get user information | `/userinfo [@user]` or `!userinfo [@user]` |
-| `serverinfo` | Get server information | `/serverinfo` or `!serverinfo` |
-| `roleinfo` | Get role information | `/roleinfo @role` or `!roleinfo @role` |
-| `channelinfo` | Get channel information | `/channelinfo [#channel]` or `!channelinfo [#channel]` |
-| `botinfo` | Get detailed bot information | `/botinfo` or `!botinfo` |
-
-### Fun Commands
-| Command | Description | Usage |
-|---------|-------------|-------|
-| `8ball` | Ask the magic 8-ball | `/8ball <question>` or `!8ball <question>` |
-| `coinflip` | Flip a coin | `/coinflip` or `!coinflip` |
-| `dice` | Roll a dice | `/dice [sides]` or `!dice [sides]` |
-| `rps` | Play rock-paper-scissors | `/rps <choice>` or `!rps <choice>` |
-| `choose` | Choose between options | `/choose <options>` or `!choose <options>` |
-| `reverse` | Reverse text | `/reverse <text>` or `!reverse <text>` |
-| `emojify` | Convert text to emojis | `/emojify <text>` or `!emojify <text>` |
-
-## Setup Instructions
-
-### 1. Prerequisites
-
-- Python 3.8 or higher
-- A Discord bot token
-- Bash shell (for auto-installation script)
-- **FFmpeg** (for music functionality)
-
-### 2. Install FFmpeg
+### **Install Java**
+LavaLink requires Java 11 or higher:
 
 **Linux (Ubuntu/Debian):**
 ```bash
 sudo apt update
-sudo apt install ffmpeg
+sudo apt install openjdk-11-jdk
 ```
 
 **macOS:**
 ```bash
-brew install ffmpeg
+brew install openjdk@11
 ```
 
 **Windows:**
-- Download from [FFmpeg website](https://ffmpeg.org/download.html)
-- Or use: `choco install ffmpeg` (Chocolatey)
-- Or use: `winget install FFmpeg` (Windows Package Manager)
+Download from [Adoptium](https://adoptium.net/)
 
-### 3. Create a Discord Bot
+### **LavaLink Server**
+The LavaLink server runs independently and handles all audio processing. The bot connects to it via WebSocket.
 
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click "New Application" and give it a name
-3. Go to the "Bot" section and click "Add Bot"
-4. Copy the bot token (you'll need this later)
-5. Under "Privileged Gateway Intents", enable:
-   - Message Content Intent
-   - Server Members Intent
-6. **Important**: Go to "OAuth2 > URL Generator" and select:
-   - `bot` under scopes
-   - `applications.commands` under scopes (for slash commands)
-   - All necessary permissions
+## 🔄 Update System
 
-### 4. Auto-Installation (Recommended)
-
+### **Automatic Updates**
 ```bash
-# Clone or download the bot files
-# Navigate to the bot directory
-cd rat-bot
+# Linux/macOS
+./update.sh
 
-# Make install script executable
-chmod +x install.sh
-
-# Run the installation script
-./install.sh
-
-# Edit the .env file with your bot token
-nano .env
-# or
-code .env
-
-# Run the bot (choose your preferred method)
-./run.sh                    # Single instance
-./run.sh --sharded          # Automatic sharding
-./run.sh --shard-manager 4  # Manual sharding with 4 shards
+# Windows
+update.bat
 ```
 
-### 5. Manual Installation
-
+### **Manual Updates**
 ```bash
-# Install dependencies
+# Update dependencies
 pip install -r requirements.txt
 
-# Create .env file
-cp example.env .env
-# Edit .env and add your bot token
-
-# Run the bot
-python bot.py
+# Update LavaLink (if needed)
+cd lavalink
+wget -O Lavalink.jar https://github.com/lavalink-devs/Lavalink/releases/download/4.0.0/Lavalink.jar
 ```
 
-### 6. Invite the Bot to Your Server
+## 🛠️ Troubleshooting
 
-1. Go to OAuth2 > URL Generator in the Discord Developer Portal
-2. Select both "bot" and "applications.commands" under scopes
-3. Select the permissions you want (at minimum: Send Messages, Read Message History, Use Slash Commands, Connect, Speak)
-4. Use the generated URL to invite the bot to your server
+### **Common Issues**
 
-## Music System
+#### **LavaLink Connection Issues**
+- **Problem:** Bot can't connect to LavaLink
+- **Solution:** Make sure LavaLink server is running (`./start_lavalink.sh`)
+- **Solution:** Check Java version (`java -version`)
 
-The bot includes a comprehensive music system with the following features:
+#### **Music Not Playing**
+- **Problem:** Music commands don't work
+- **Solution:** Ensure LavaLink server is running
+- **Solution:** Check bot has voice permissions
+- **Solution:** Verify FFmpeg is installed (optional)
 
-### Music Commands
-- **`/play <song>`** - Play music from YouTube (URL or search term)
-- **`/pause`** - Pause the current song
-- **`/resume`** - Resume the paused song
-- **`/skip`** - Skip to the next song
-- **`/stop`** - Stop playing and clear the queue
-- **`/queue`** - View the current music queue
-- **`/nowplaying`** - Show currently playing song
-- **`/volume <0-100>`** - Set the music volume
-- **`/join`** - Join your voice channel
-- **`/leave`** - Leave the voice channel
-- **`/fixmusic`** - Update yt-dlp (admin only)
+#### **Java Issues**
+- **Problem:** LavaLink won't start
+- **Solution:** Install Java 11 or higher
+- **Solution:** Check Java version (`java -version`)
 
-### Music Features
-- **YouTube Support**: Play from YouTube URLs or search terms
-- **Queue Management**: Add multiple songs to a queue
-- **Volume Control**: Adjust music volume
-- **Auto-disconnect**: Bot leaves when alone in voice channel
-- **Rich Embeds**: Beautiful song information displays
-- **Error Handling**: Graceful handling of music errors
-- **SSL Bypass**: Automatic SSL certificate handling
+#### **Bot Permissions**
+- **Problem:** Bot can't join voice channels
+- **Solution:** Give bot "Connect" and "Speak" permissions
+- **Solution:** Check bot role hierarchy
 
-### Music Usage Examples
-```bash
-# Join and play a song
-/join
-/play despacito
+### **Logs**
+Check the console output for error messages. The bot will show connection status and any issues.
 
-# Play from YouTube URL
-/play https://www.youtube.com/watch?v=dQw4w9WgXcQ
-
-# Control playback
-/pause
-/resume
-/skip
-
-# Manage queue
-/queue
-/nowplaying
-/volume 50
-
-# Leave voice channel
-/leave
-
-# Fix music issues (admin only)
-/fixmusic
-```
-
-## Slash Commands vs Legacy Commands
-
-### Slash Commands (`/command`)
-- **Modern Discord interface**
-- **Auto-completion and suggestions**
-- **Parameter descriptions and validation**
-- **Better mobile experience**
-- **Automatic permission checking**
-
-### Legacy Commands (`!command`)
-- **Faster typing for experienced users**
-- **Works with custom prefixes**
-- **Familiar to long-time Discord users**
-- **No need to wait for Discord's slash command system**
-
-### Hybrid Support
-All commands in this bot work with **both** systems simultaneously:
-- Use `/ping` or `!ping` - both work!
-- Use `/kick @user reason` or `!kick @user reason` - both work!
-- The bot automatically syncs slash commands on startup and when joining new servers
-
-## Project Structure
-
-```
-rat-bot/
-├── bot.py              # Main bot file with events and cog loading
-├── config.py           # Configuration and environment variables
-├── database.py         # Database management and operations
-├── shard_manager.py    # Shard management for large-scale deployments
-├── run_sharded.py      # Simple sharded bot runner
-├── update.py           # Update script for easy updates
-├── update.sh           # Linux/Mac update script
-├── update.bat          # Windows update script
-├── update_ytdlp.py     # yt-dlp update script
-├── requirements.txt    # Python dependencies
-├── install.sh         # Auto-installation script
-├── install.bat        # Windows installation script
-├── run.sh             # Bot run script with sharding options
-├── run.bat            # Windows run script
-├── README.md          # This file
-├── example.env        # Environment template
-├── .gitignore         # Git ignore file
-├── data/              # Database files
-│   └── bot.db        # SQLite database
-├── logs/              # Log files
-└── cogs/              # Command categories
-    ├── __init__.py    # Package initialization
-    ├── general.py     # General utility commands
-    ├── moderation.py  # Moderation commands with database logging
-    ├── info.py        # Information commands
-    ├── fun.py         # Fun and entertainment commands
-    ├── custom.py      # Custom commands management
-    └── music.py       # Music player functionality
-```
-
-## Database Features
-
-The bot uses a SQLite database with the following tables:
-
-- **mod_logs**: Tracks all moderation actions (kick, ban, warn, etc.)
-- **user_warnings**: Stores user warnings with reasons and timestamps
-- **custom_commands**: Server-specific custom commands
-- **server_settings**: Server configuration (mod log channels, prefixes, etc.)
-- **user_stats**: User activity tracking (messages, commands used)
-
-## Configuration
-
-You can modify the bot settings in `config.py`:
-
-- `BOT_PREFIX`: Command prefix (default: "!")
-- `BOT_NAME`: Bot name for display
-- `BOT_VERSION`: Bot version
-- `SHARD_COUNT`: Number of shards for manual sharding
-- `SHARD_IDS`: Specific shard IDs to run
-
-## Moderation Logs
-
-The bot automatically logs all moderation actions to a designated channel:
-
-1. Set up a mod log channel: `/setmodlog #mod-logs` or `!setmodlog #mod-logs`
-2. All moderation actions will be logged automatically
-3. View logs with: `/modlogs` or `!modlogs @user`
-
-## Custom Commands
-
-Create server-specific custom commands:
-
-- `/addcommand hello Welcome to our server!` or `!addcommand hello Welcome to our server!`
-- `/listcommands` or `!listcommands` - View all custom commands
-- `/editcommand hello Welcome to our amazing server!` or `!editcommand hello Welcome to our amazing server!`
-- `/delcommand hello` or `!delcommand hello` - Delete a custom command
-
-## Adding New Commands
-
-To add new commands, simply create a new file in the `cogs/` directory or add to an existing cog file:
-
-1. Create a new Python file in `cogs/` (e.g., `cogs/your_category.py`)
-2. Define a cog class with your commands using `@commands.hybrid_command`
-3. Add a `setup(bot)` function at the bottom
-4. The bot will automatically load the new cog on startup
-
-Example:
-```python
-import discord
-from discord.ext import commands
-from discord import app_commands
-
-class YourCategory(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-    
-    @commands.hybrid_command(name='yourcommand', description="Your command description")
-    @app_commands.describe(parameter="Description of the parameter")
-    async def your_command(self, ctx, parameter: str):
-        await ctx.send("Your command response!")
-
-async def setup(bot):
-    await bot.add_cog(YourCategory(bot))
-```
-
-## Features in Detail
-
-### Update System
-- **Non-Destructive Updates**: Preserves all data and settings
-- **Automatic Backups**: Creates timestamped database backups
-- **Dependency Management**: Updates all packages including yt-dlp
-- **Schema Migration**: Automatically adds new database tables
-- **Version Tracking**: Shows current and updated versions
-- **Error Recovery**: Graceful handling of update failures
-
-### Sharding System
-- **Automatic Sharding**: Discord.py automatically determines optimal shard count
-- **Manual Sharding**: Custom shard management for very large bots
-- **Shard Manager**: Process monitoring and crash recovery
-- **Cross-shard Communication**: Commands work across all shards
-- **Resource Optimization**: Efficient memory and CPU usage
-
-### Music System
-- **YouTube Integration**: Play from YouTube URLs or search terms
-- **Queue Management**: Add multiple songs to a queue
-- **Volume Control**: Adjust music volume (0-100%)
-- **Auto-disconnect**: Bot leaves when alone in voice channel
-- **Rich Embeds**: Beautiful song information displays
-- **Error Handling**: Graceful handling of music errors
-- **SSL Bypass**: Automatic SSL certificate handling
-
-### Hybrid Commands
-- **Dual compatibility**: Works with both slash and legacy commands
-- **Automatic syncing**: Commands sync to Discord on startup
-- **Parameter descriptions**: Rich descriptions for slash command parameters
-- **Type validation**: Automatic parameter type checking
-
-### Database Integration
-- Persistent storage for all bot data
-- Automatic mod action logging
-- User warning system
-- Custom commands per server
-- User activity tracking
-
-### Auto-Installation Script
-- Checks Python version requirements
-- Checks FFmpeg installation (for music)
-- Creates virtual environment
-- Installs all dependencies
-- Sets up database structure
-- Creates necessary directories
-
-### Modular Design
-- Commands organized into logical categories
-- Easy to maintain and extend
-- Automatic cog loading system
-
-### Error Handling
-- Command not found errors
-- Permission errors
-- General error logging
-- Separate error handling for slash and legacy commands
-
-### Logging
-- Comprehensive logging system
-- Guild join/leave tracking
-- Command error logging
-- Shard status monitoring
-- Update activity logging
-
-### Rich Embeds
-- All responses use Discord embeds
-- Color-coded responses
-- Professional appearance
-
-### Permission System
-- Admin-only commands properly protected
-- User-friendly permission error messages
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Bot not starting**: Check your `.env` file has the correct token
-2. **Commands not working**: Ensure the bot has the required permissions
-3. **Slash commands not appearing**: Make sure you invited the bot with `applications.commands` scope
-4. **Music not working**: Ensure FFmpeg is installed and in PATH
-5. **Database errors**: Run `./install.sh` again to recreate the database
-6. **Permission denied**: Make sure the scripts are executable: `chmod +x *.sh`
-
-### Update Issues
-
-1. **Update failed**: Check your internet connection and try again
-2. **Database backup failed**: Ensure you have write permissions to the data directory
-3. **Git not found**: Install git or skip code updates
-4. **Virtual environment issues**: Re-run the installation script
-
-### Sharding Issues
-
-1. **"Too many guilds"**: Enable sharding with `./run.sh --sharded`
-2. **Shard crashes**: Use the shard manager for automatic recovery
-3. **Memory usage**: Manual sharding can help distribute load
-4. **Rate limits**: Shard manager includes delays between shard starts
-
-### Music Issues
-
-1. **"FFmpeg not found"**: Install FFmpeg (see setup instructions)
-2. **"No module named 'yt_dlp'"**: Run `pip install -r requirements.txt`
-3. **Music not playing**: Check bot has "Connect" and "Speak" permissions
-4. **Queue not working**: Make sure you're in a voice channel
-5. **SSL certificate errors**: Use `/fixmusic` command or run `python update_ytdlp.py`
-
-### Slash Command Sync Issues
-
-If slash commands aren't appearing:
-1. Make sure the bot has the `applications.commands` scope
-2. Check the bot has proper permissions
-3. Wait a few minutes for Discord to sync (can take up to 1 hour)
-4. Try running the bot again to force a sync
-
-### Logs
-
-Check the `logs/` directory for detailed error logs.
-
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -598,14 +288,17 @@ Check the `logs/` directory for detailed error logs.
 4. Test thoroughly
 5. Submit a pull request
 
-## License
+## 📄 License
 
-This project is open source and available under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Support
+## 🙏 Acknowledgments
 
-If you encounter any issues or have questions, please open an issue on the repository.
+- **Discord.py** - The Discord API wrapper
+- **LavaLink** - The audio server
+- **SQLite** - Database engine
+- **FFmpeg** - Audio processing
 
 ---
 
-**Note**: Make sure to keep your bot token secure and never share it publicly! 
+**🎵 Enjoy your music bot with LavaLink!** 
