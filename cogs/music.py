@@ -5,6 +5,11 @@ from discord import app_commands
 import lavalink
 from datetime import timedelta
 import re
+import subprocess
+import os
+import sys
+import time
+import threading
 
 class Music(commands.Cog):
     """Music commands using LavaLink for better audio processing."""
@@ -16,12 +21,80 @@ class Music(commands.Cog):
         self.bot.add_listener(self.bot.music.voice_update_handler, 'on_socket_response')
         self.music = self.bot.music
         self.lavalink_ready = False
+        self.lavalink_process = None
+        self.lavalink_started = False
+
+    async def start_lavalink_server(self):
+        """Start LavaLink server if not already running."""
+        if self.lavalink_started:
+            return
+
+        # Check if LavaLink directory exists
+        if not os.path.exists('lavalink'):
+            print("❌ LavaLink not installed. Please run install_lavalink.sh first.")
+            return
+
+        # Check if Lavalink.jar exists
+        if not os.path.exists('lavalink/Lavalink.jar'):
+            print("❌ Lavalink.jar not found. Please run install_lavalink.sh first.")
+            return
+
+        # Check if Java is available
+        try:
+            subprocess.run(['java', '-version'], capture_output=True, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("❌ Java not found. Please install Java 11 or higher.")
+            return
+
+        print("🎵 Starting LavaLink server...")
+        
+        try:
+            # Start LavaLink server in background
+            self.lavalink_process = subprocess.Popen(
+                ['java', '-jar', 'Lavalink.jar'],
+                cwd='lavalink',
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            self.lavalink_started = True
+            print("✅ LavaLink server started successfully!")
+            
+            # Wait a moment for server to start
+            await asyncio.sleep(3)
+            
+        except Exception as e:
+            print(f"❌ Failed to start LavaLink server: {e}")
+            self.lavalink_started = False
+
+    async def stop_lavalink_server(self):
+        """Stop LavaLink server."""
+        if self.lavalink_process and self.lavalink_process.poll() is None:
+            print("🛑 Stopping LavaLink server...")
+            self.lavalink_process.terminate()
+            try:
+                self.lavalink_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.lavalink_process.kill()
+            print("✅ LavaLink server stopped.")
 
     @commands.Cog.listener()
     async def on_ready(self):
         """Initialize LavaLink when bot is ready."""
+        # Start LavaLink server
+        await self.start_lavalink_server()
+        
+        # Wait for LavaLink to be ready
+        await asyncio.sleep(2)
+        
         self.lavalink_ready = True
         print("🎵 Music system ready with LavaLink!")
+
+    @commands.Cog.listener()
+    async def on_disconnect(self):
+        """Stop LavaLink when bot disconnects."""
+        await self.stop_lavalink_server()
 
     def get_player(self, guild):
         """Get or create a LavaLink player for the guild."""
@@ -275,6 +348,19 @@ class Music(commands.Cog):
 
         track = player.queue.pop(position - 1)
         await ctx.send(f"✅ Removed '{track.title}' from the queue.")
+
+    @commands.hybrid_command(name='lavalink', description="Check LavaLink server status")
+    async def lavalink_status(self, ctx):
+        """Check LavaLink server status."""
+        if self.lavalink_started and self.lavalink_process and self.lavalink_process.poll() is None:
+            embed = discord.Embed(title="🎵 LavaLink Status", color=0x00ff00)
+            embed.add_field(name="Status", value="✅ Running", inline=True)
+            embed.add_field(name="Process ID", value=str(self.lavalink_process.pid), inline=True)
+            await ctx.send(embed=embed)
+        else:
+            embed = discord.Embed(title="🎵 LavaLink Status", color=0xff0000)
+            embed.add_field(name="Status", value="❌ Not Running", inline=True)
+            await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_lavalink_track_end(self, player, track, reason):

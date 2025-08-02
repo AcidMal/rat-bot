@@ -1,117 +1,85 @@
 #!/usr/bin/env python3
 """
 Rat Bot Update Script
-This script updates the bot without requiring a full reinstallation.
+Automatically updates the bot's code, dependencies, and database schema.
 """
 
-import subprocess
-import sys
 import os
+import sys
+import subprocess
+import sqlite3
 import shutil
-import json
-import requests
 from datetime import datetime
-
-def print_header():
-    """Print the update script header."""
-    print("🔄 Rat Bot Update Script")
-    print("=======================")
-    print()
+import json
 
 def check_git():
     """Check if git is available."""
     try:
-        result = subprocess.run(['git', '--version'], capture_output=True, text=True)
-        return result.returncode == 0
-    except FileNotFoundError:
+        subprocess.run(['git', '--version'], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return False
 
 def get_current_version():
-    """Get the current bot version."""
+    """Get current bot version."""
     try:
         with open('config.py', 'r') as f:
-            for line in f:
+            content = f.read()
+            for line in content.split('\n'):
                 if 'BOT_VERSION' in line and '=' in line:
                     version = line.split('=')[1].strip().strip('"\'')
                     return version
     except FileNotFoundError:
         pass
-    return "Unknown"
+    return "1.0.0"
 
 def update_dependencies():
     """Update Python dependencies."""
     print("📦 Updating Python dependencies...")
     
     try:
-        # Activate virtual environment if it exists
-        if os.path.exists('venv'):
-            if os.name == 'nt':  # Windows
-                activate_script = os.path.join('venv', 'Scripts', 'activate.bat')
-                python_exe = os.path.join('venv', 'Scripts', 'python.exe')
-            else:  # Unix/Linux/Mac
-                activate_script = os.path.join('venv', 'bin', 'activate')
-                python_exe = os.path.join('venv', 'bin', 'python')
-        else:
-            python_exe = sys.executable
-        
-        # Update pip
-        print("  Upgrading pip...")
-        subprocess.run([python_exe, '-m', 'pip', 'install', '--upgrade', 'pip'], 
+        # Update pip first
+        subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'], 
                       capture_output=True, check=True)
         
-        # Update requirements
-        print("  Installing/updating requirements...")
-        subprocess.run([python_exe, '-m', 'pip', 'install', '-r', 'requirements.txt'], 
-                      capture_output=True, check=True)
-        
-        # Update yt-dlp specifically (for music fixes)
-        print("  Updating yt-dlp...")
-        subprocess.run([python_exe, '-m', 'pip', 'install', '--upgrade', 'yt-dlp'], 
+        # Install/update requirements
+        subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'], 
                       capture_output=True, check=True)
         
         print("✅ Dependencies updated successfully!")
         return True
-        
     except subprocess.CalledProcessError as e:
-        print(f"❌ Error updating dependencies: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"❌ Failed to update dependencies: {e}")
         return False
 
 def backup_database():
     """Create a backup of the database."""
-    if os.path.exists('data/bot.db'):
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_path = f'data/bot_backup_{timestamp}.db'
-        
-        try:
-            shutil.copy2('data/bot.db', backup_path)
-            print(f"💾 Database backed up to: {backup_path}")
-            return True
-        except Exception as e:
-            print(f"⚠️  Could not backup database: {e}")
-            return False
-    return True
+    if not os.path.exists('data/bot.db'):
+        print("📝 No database found to backup.")
+        return True
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = f"data/bot_backup_{timestamp}.db"
+    
+    try:
+        shutil.copy2('data/bot.db', backup_path)
+        print(f"✅ Database backed up to: {backup_path}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to backup database: {e}")
+        return False
 
 def update_database_schema():
     """Update database schema if needed."""
-    print("🗄️  Checking database schema...")
-    
-    try:
-        import sqlite3
-        
-        # Create database connection
-        conn = sqlite3.connect('data/bot.db')
-        cursor = conn.cursor()
-        
-        # Get current tables
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        existing_tables = [row[0] for row in cursor.fetchall()]
-        
-        # Define required tables and their schemas
-        required_tables = {
-            'mod_logs': '''
+    if not os.path.exists('data/bot.db'):
+        print("📝 No database found. Creating new database...")
+        try:
+            os.makedirs('data', exist_ok=True)
+            conn = sqlite3.connect('data/bot.db')
+            cursor = conn.cursor()
+            
+            # Create all tables
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS mod_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
@@ -121,8 +89,9 @@ def update_database_schema():
                     reason TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            ''',
-            'user_warnings': '''
+            ''')
+            
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_warnings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
@@ -131,8 +100,9 @@ def update_database_schema():
                     reason TEXT NOT NULL,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            ''',
-            'custom_commands': '''
+            ''')
+            
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS custom_commands (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
@@ -141,8 +111,9 @@ def update_database_schema():
                     created_by INTEGER NOT NULL,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            ''',
-            'server_settings': '''
+            ''')
+            
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS server_settings (
                     guild_id INTEGER PRIMARY KEY,
                     mod_log_channel INTEGER,
@@ -152,8 +123,9 @@ def update_database_schema():
                     auto_role INTEGER,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            ''',
-            'user_stats': '''
+            ''')
+            
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_stats (
                     user_id INTEGER NOT NULL,
                     guild_id INTEGER NOT NULL,
@@ -163,139 +135,221 @@ def update_database_schema():
                     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, guild_id)
                 )
-            '''
-        }
+            ''')
+            
+            conn.commit()
+            conn.close()
+            print("✅ New database created successfully!")
+            return True
+        except Exception as e:
+            print(f"❌ Failed to create database: {e}")
+            return False
+    
+    print("📝 Checking database schema...")
+    try:
+        conn = sqlite3.connect('data/bot.db')
+        cursor = conn.cursor()
+        
+        # Check if all tables exist
+        tables = ['mod_logs', 'user_warnings', 'custom_commands', 'server_settings', 'user_stats']
+        existing_tables = []
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        for row in cursor.fetchall():
+            existing_tables.append(row[0])
         
         # Create missing tables
-        for table_name, schema in required_tables.items():
-            if table_name not in existing_tables:
-                print(f"  Creating table: {table_name}")
-                cursor.execute(schema)
+        if 'mod_logs' not in existing_tables:
+            cursor.execute('''
+                CREATE TABLE mod_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    moderator_id INTEGER NOT NULL,
+                    action_type TEXT NOT NULL,
+                    reason TEXT,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            print("✅ Added mod_logs table")
+        
+        if 'user_warnings' not in existing_tables:
+            cursor.execute('''
+                CREATE TABLE user_warnings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    moderator_id INTEGER NOT NULL,
+                    reason TEXT NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            print("✅ Added user_warnings table")
+        
+        if 'custom_commands' not in existing_tables:
+            cursor.execute('''
+                CREATE TABLE custom_commands (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    command_name TEXT NOT NULL,
+                    response TEXT NOT NULL,
+                    created_by INTEGER NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            print("✅ Added custom_commands table")
+        
+        if 'server_settings' not in existing_tables:
+            cursor.execute('''
+                CREATE TABLE server_settings (
+                    guild_id INTEGER PRIMARY KEY,
+                    mod_log_channel INTEGER,
+                    welcome_channel INTEGER,
+                    welcome_message TEXT,
+                    prefix TEXT DEFAULT '!',
+                    auto_role INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            print("✅ Added server_settings table")
+        
+        if 'user_stats' not in existing_tables:
+            cursor.execute('''
+                CREATE TABLE user_stats (
+                    user_id INTEGER NOT NULL,
+                    guild_id INTEGER NOT NULL,
+                    messages_sent INTEGER DEFAULT 0,
+                    commands_used INTEGER DEFAULT 0,
+                    last_message DATETIME,
+                    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, guild_id)
+                )
+            ''')
+            print("✅ Added user_stats table")
         
         conn.commit()
         conn.close()
-        print("✅ Database schema updated!")
+        print("✅ Database schema updated successfully!")
         return True
-        
     except Exception as e:
-        print(f"❌ Error updating database schema: {e}")
+        print(f"❌ Failed to update database schema: {e}")
         return False
 
 def check_for_updates():
-    """Check if there are updates available (if git is available)."""
+    """Check for git updates."""
     if not check_git():
-        print("⚠️  Git not found. Cannot check for updates automatically.")
+        print("⚠️ Git not found. Skipping code updates.")
         return False
     
     try:
         # Check if we're in a git repository
-        result = subprocess.run(['git', 'status'], capture_output=True, text=True)
-        if result.returncode != 0:
-            print("⚠️  Not in a git repository. Cannot check for updates.")
-            return False
+        subprocess.run(['git', 'status'], capture_output=True, check=True)
         
         # Fetch latest changes
-        print("📡 Checking for updates...")
         subprocess.run(['git', 'fetch'], capture_output=True, check=True)
         
         # Check if there are updates
         result = subprocess.run(['git', 'rev-list', 'HEAD..origin/main', '--count'], 
                               capture_output=True, text=True, check=True)
-        commits_behind = int(result.stdout.strip())
         
-        if commits_behind > 0:
-            print(f"🔄 Found {commits_behind} new commit(s)!")
+        if result.stdout.strip() != '0':
             return True
         else:
-            print("✅ Bot is up to date!")
+            print("📝 No code updates available.")
             return False
-            
     except subprocess.CalledProcessError:
-        print("⚠️  Could not check for updates.")
-        return False
-    except Exception as e:
-        print(f"❌ Error checking for updates: {e}")
+        print("⚠️ Not a git repository or no remote configured.")
         return False
 
 def pull_updates():
-    """Pull the latest updates from git."""
-    if not check_git():
-        print("❌ Git not available. Cannot pull updates.")
-        return False
-    
+    """Pull latest updates from git."""
     try:
-        print("📥 Pulling latest updates...")
-        subprocess.run(['git', 'pull'], check=True)
-        print("✅ Updates pulled successfully!")
+        subprocess.run(['git', 'pull'], capture_output=True, check=True)
+        print("✅ Code updated successfully!")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ Error pulling updates: {e}")
+        print(f"❌ Failed to pull updates: {e}")
         return False
 
 def create_update_log():
-    """Create a log of the update."""
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log_entry = f"[{timestamp}] Bot updated\n"
+    """Create an update log entry."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    version = get_current_version()
+    
+    log_entry = {
+        'timestamp': timestamp,
+        'version': version,
+        'update_type': 'automatic'
+    }
     
     try:
-        with open('logs/update.log', 'a') as f:
-            f.write(log_entry)
-    except Exception:
-        pass  # Silently fail if we can't write the log
+        os.makedirs('logs', exist_ok=True)
+        with open('logs/updates.log', 'a') as f:
+            f.write(f"{json.dumps(log_entry)}\n")
+    except Exception as e:
+        print(f"⚠️ Failed to create update log: {e}")
 
 def main():
     """Main update function."""
-    print_header()
+    print("🔄 Rat Bot Update Script")
+    print("========================")
+    print()
     
     # Check if we're in the right directory
     if not os.path.exists('bot.py'):
         print("❌ Please run this script from the bot directory.")
-        return
+        sys.exit(1)
     
-    # Get current version
-    current_version = get_current_version()
-    print(f"📋 Current version: {current_version}")
+    # Check if virtual environment is activated
+    if not hasattr(sys, 'real_prefix') and not (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix):
+        print("⚠️ Virtual environment not detected. Please activate it first.")
+        print("   Linux/macOS: source venv/bin/activate")
+        print("   Windows: venv\\Scripts\\activate.bat")
+        sys.exit(1)
+    
+    print(f"📅 Update started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🎯 Current version: {get_current_version()}")
     print()
     
-    # Check for updates
-    has_updates = check_for_updates()
-    
-    if has_updates:
-        response = input("Do you want to pull the latest updates? (y/N): ").strip().lower()
-        if response in ['y', 'yes']:
-            if not pull_updates():
-                print("❌ Failed to pull updates. Continuing with dependency updates...")
-        else:
-            print("⏭️  Skipping code updates.")
-    
     # Backup database
-    backup_database()
+    if not backup_database():
+        print("❌ Database backup failed. Aborting update.")
+        sys.exit(1)
+    
+    # Check for code updates
+    has_updates = check_for_updates()
     
     # Update dependencies
     if not update_dependencies():
-        print("❌ Failed to update dependencies.")
-        return
+        print("❌ Dependency update failed. Aborting update.")
+        sys.exit(1)
+    
+    # Pull code updates if available
+    if has_updates:
+        if not pull_updates():
+            print("❌ Code update failed. Aborting update.")
+            sys.exit(1)
     
     # Update database schema
     if not update_database_schema():
-        print("❌ Failed to update database schema.")
-        return
+        print("❌ Database schema update failed. Aborting update.")
+        sys.exit(1)
     
     # Create update log
     create_update_log()
     
     print()
-    print("🎉 Update completed successfully!")
+    print("✅ Update completed successfully!")
     print()
-    print("Next steps:")
-    print("1. Restart your bot")
-    print("2. Check the logs for any issues")
-    print("3. Test the new features")
+    print("📝 What was updated:")
+    print("   • Python dependencies")
+    if has_updates:
+        print("   • Bot code (from git)")
+    print("   • Database schema (if needed)")
     print()
-    print("💡 If you encounter any issues:")
-    print("   - Check the logs in the logs/ directory")
-    print("   - Run the installation script if needed")
-    print("   - Restore from backup if necessary")
+    print("🚀 You can now restart your bot!")
+    print("   Linux/macOS: ./run.sh")
+    print("   Windows: run.bat")
 
 if __name__ == "__main__":
     main() 

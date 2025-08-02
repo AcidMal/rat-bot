@@ -3,45 +3,61 @@
 # Rat Bot Run Script
 # This script runs the bot with various options
 
-echo "🤖 Rat Bot Run Script"
-echo "===================="
+# Function to show help
+show_help() {
+    echo "🤖 Rat Bot Run Script"
+    echo "====================="
+    echo ""
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --sharded          Run with automatic sharding"
+    echo "  --shard-manager N   Run with manual sharding (N = number of shards)"
+    echo "  --help             Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0                 # Single instance (default)"
+    echo "  $0 --sharded       # Automatic sharding"
+    echo "  $0 --shard-manager 4  # Manual sharding with 4 shards"
+    echo ""
+    echo "🎵 Note: LavaLink server starts automatically with the bot!"
+}
 
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
-    echo "❌ Virtual environment not found. Please run ./install.sh first."
-    exit 1
-fi
-
-# Check if .env file exists
-if [ ! -f ".env" ]; then
-    echo "❌ .env file not found. Please run ./install.sh first."
+    echo "❌ Virtual environment not found. Please run install.sh first."
     exit 1
 fi
 
 # Activate virtual environment
-echo "Activating virtual environment..."
 source venv/bin/activate
 
-# Check command line arguments
-if [ "$1" = "--sharded" ]; then
-    echo "Starting bot with automatic sharding..."
-    python run_sharded.py
-elif [ "$1" = "--shard-manager" ]; then
-    echo "Starting shard manager..."
-    if [ -n "$2" ]; then
+# Parse command line arguments
+case "${1:-}" in
+    --sharded)
+        echo "🚀 Starting bot with automatic sharding..."
+        python run_sharded.py
+        ;;
+    --shard-manager)
+        if [ -z "$2" ]; then
+            echo "❌ Please specify number of shards: --shard-manager N"
+            exit 1
+        fi
+        echo "🚀 Starting bot with manual sharding ($2 shards)..."
         python shard_manager.py --shards "$2"
-    else
-        echo "Usage: ./run.sh --shard-manager <number_of_shards>"
+        ;;
+    --help|-h)
+        show_help
+        exit 0
+        ;;
+    "")
+        echo "🚀 Starting bot (single instance)..."
+        echo "🎵 LavaLink server will start automatically!"
+        python bot.py
+        ;;
+    *)
+        echo "❌ Unknown option: $1"
+        show_help
         exit 1
-    fi
-elif [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    echo "Usage:"
-    echo "  ./run.sh                    - Run bot normally (single instance)"
-    echo "  ./run.sh --sharded          - Run bot with automatic sharding"
-    echo "  ./run.sh --shard-manager N  - Run shard manager with N shards"
-    echo "  ./run.sh --help             - Show this help message"
-    exit 0
-else
-    echo "Starting bot normally..."
-    python bot.py
-fi 
+        ;;
+esac 

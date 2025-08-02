@@ -13,6 +13,7 @@ A feature-rich Discord bot built with Discord.py, featuring moderation tools, mu
 - **Sharding Support** - Handle large numbers of servers efficiently
 - **Database Integration** - Persistent data storage with SQLite
 - **Auto-Installation** - Easy setup scripts for all platforms
+- **Auto-LavaLink** - LavaLink server starts automatically with the bot
 
 ## 🎵 Music System
 
@@ -24,6 +25,7 @@ The bot uses **LavaLink** for high-quality audio processing:
 - ✅ **Multiple Sources** - YouTube, SoundCloud, Bandcamp, Twitch, Vimeo
 - ✅ **Higher Quality** - Better audio quality and stability
 - ✅ **No Authentication** - No sign-in prompts or certificate issues
+- ✅ **Auto-Start** - LavaLink server starts automatically with the bot
 
 ### **Music Commands**
 | Command | Description |
@@ -41,6 +43,7 @@ The bot uses **LavaLink** for high-quality audio processing:
 | `/clear` | Clear queue |
 | `/remove <position>` | Remove track from queue |
 | `/leave` | Leave voice channel |
+| `/lavalink` | Check LavaLink server status |
 
 ## 🚀 Quick Start
 
@@ -80,25 +83,16 @@ install.bat
    DISCORD_PREFIX=!
    ```
 
-2. **Start LavaLink server** (in a separate terminal):
+2. **Start the bot** (LavaLink starts automatically):
    ```bash
    # Linux/macOS
-   ./start_lavalink.sh
+   ./run.sh
    
    # Windows
-   start_lavalink.bat
+   run.bat
    ```
 
-3. **Start the bot**:
-   ```bash
-   # Linux/macOS
-   source venv/bin/activate
-   python bot.py
-   
-   # Windows
-   venv\Scripts\activate.bat
-   python bot.py
-   ```
+That's it! The bot will automatically start the LavaLink server when it connects to Discord.
 
 ## 📋 Manual Installation
 
@@ -118,13 +112,7 @@ If you prefer manual installation:
    install_lavalink.bat
    ```
 
-3. **Start LavaLink server:**
-   ```bash
-   cd lavalink
-   java -jar Lavalink.jar
-   ```
-
-4. **Configure and run the bot:**
+3. **Configure and run the bot:**
    ```bash
    # Edit .env file with your token
    python bot.py
@@ -143,6 +131,7 @@ The bot automatically connects to LavaLink with these settings:
 - **High Quality** - Better audio processing than direct downloads
 - **No Authentication** - No SSL certificate or login issues
 - **Auto-Reconnect** - Automatic reconnection on disconnection
+- **Auto-Start** - Server starts automatically with the bot
 
 ## 🔧 Configuration
 
@@ -185,14 +174,12 @@ rat-bot/
 │   └── utility.py       # Utility commands
 ├── data/                 # Database and data files
 ├── lavalink/            # LavaLink server files
-│   ├── Lavalink.jar     # Lavalink server
-│   └── application.yml  # Lavalink configuration
+│   ├── Lavalink.jar     # LavaLink server
+│   └── application.yml  # LavaLink configuration
 ├── install.sh           # Linux/macOS installation
 ├── install.bat          # Windows installation
 ├── install_lavalink.sh  # LavaLink installation (Linux/macOS)
 ├── install_lavalink.bat # LavaLink installation (Windows)
-├── start_lavalink.sh    # Start LavaLink (Linux/macOS)
-├── start_lavalink.bat   # Start LavaLink (Windows)
 ├── run.sh               # Run bot (Linux/macOS)
 ├── run.bat              # Run bot (Windows)
 ├── update.py            # Update script
@@ -210,6 +197,7 @@ The bot uses LavaLink for all audio processing, which provides:
 - **Multiple Sources** - YouTube, SoundCloud, Bandcamp, Twitch, Vimeo
 - **Higher Quality** - Better audio processing than direct downloads
 - **Auto-Reconnect** - Automatic reconnection on disconnection
+- **Auto-Start** - Server starts automatically with the bot
 
 ### **Install Java**
 LavaLink requires Java 11 or higher:
@@ -229,7 +217,7 @@ brew install openjdk@11
 Download from [Adoptium](https://adoptium.net/)
 
 ### **LavaLink Server**
-The LavaLink server runs independently and handles all audio processing. The bot connects to it via WebSocket.
+The LavaLink server runs automatically when the bot starts and handles all audio processing. The bot connects to it via WebSocket.
 
 ## 🔄 Update System
 
@@ -258,14 +246,14 @@ wget -O Lavalink.jar https://github.com/lavalink-devs/Lavalink/releases/download
 
 #### **LavaLink Connection Issues**
 - **Problem:** Bot can't connect to LavaLink
-- **Solution:** Make sure LavaLink server is running (`./start_lavalink.sh`)
-- **Solution:** Check Java version (`java -version`)
+- **Solution:** Make sure Java 11+ is installed (`java -version`)
+- **Solution:** Check if LavaLink is installed (`ls lavalink/`)
 
 #### **Music Not Playing**
 - **Problem:** Music commands don't work
-- **Solution:** Ensure LavaLink server is running
 - **Solution:** Check bot has voice permissions
 - **Solution:** Verify FFmpeg is installed (optional)
+- **Solution:** Use `/lavalink` command to check server status
 
 #### **Java Issues**
 - **Problem:** LavaLink won't start
@@ -301,4 +289,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-**🎵 Enjoy your music bot with LavaLink!** 
+**🎵 Enjoy your music bot with auto-starting LavaLink!** 

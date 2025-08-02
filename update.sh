@@ -1,17 +1,8 @@
 #!/bin/bash
 
-# Rat Bot Update Script
-# This script updates the bot without requiring a full reinstallation
-
 echo "🔄 Rat Bot Update Script"
-echo "======================="
-echo
-
-# Check if we're in the right directory
-if [ ! -f "bot.py" ]; then
-    echo "❌ Please run this script from the bot directory."
-    exit 1
-fi
+echo "========================"
+echo ""
 
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
@@ -20,12 +11,12 @@ if [ ! -d "venv" ]; then
 fi
 
 # Activate virtual environment
-echo "Activating virtual environment..."
+echo "🔧 Activating virtual environment..."
 source venv/bin/activate
 
 # Run the update script
-echo "Running update script..."
+echo "🚀 Starting update process..."
 python update.py
 
-echo
-echo "Update process completed!" 
+echo ""
+echo "✅ Update script completed!" 

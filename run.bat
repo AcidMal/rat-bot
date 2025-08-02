@@ -2,49 +2,72 @@
 REM Rat Bot Run Script for Windows
 REM This script runs the bot with various options
 
+REM Function to show help
+:show_help
 echo 🤖 Rat Bot Run Script
-echo ====================
+echo =====================
+echo.
+echo Usage: %0 [OPTIONS]
+echo.
+echo Options:
+echo   --sharded          Run with automatic sharding
+echo   --shard-manager N   Run with manual sharding (N = number of shards)
+echo   --help             Show this help message
+echo.
+echo Examples:
+echo   %0                 # Single instance (default)
+echo   %0 --sharded       # Automatic sharding
+echo   %0 --shard-manager 4  # Manual sharding with 4 shards
+echo.
+echo 🎵 Note: LavaLink server starts automatically with the bot!
+goto :eof
 
 REM Check if virtual environment exists
-if not exist venv (
+if not exist "venv" (
     echo ❌ Virtual environment not found. Please run install.bat first.
     pause
     exit /b 1
 )
 
-REM Check if .env file exists
-if not exist .env (
-    echo ❌ .env file not found. Please run install.bat first.
-    pause
-    exit /b 1
-)
-
 REM Activate virtual environment
-echo Activating virtual environment...
 call venv\Scripts\activate.bat
 
-REM Check command line arguments
+REM Parse command line arguments
 if "%1"=="--sharded" (
-    echo Starting bot with automatic sharding...
+    echo 🚀 Starting bot with automatic sharding...
     python run_sharded.py
-) else if "%1"=="--shard-manager" (
-    echo Starting shard manager...
-    if not "%2"=="" (
-        python shard_manager.py --shards %2
-    ) else (
-        echo Usage: run.bat --shard-manager ^<number_of_shards^>
+    goto :eof
+)
+
+if "%1"=="--shard-manager" (
+    if "%2"=="" (
+        echo ❌ Please specify number of shards: --shard-manager N
         pause
         exit /b 1
     )
-) else if "%1"=="--help" (
-    echo Usage:
-    echo   run.bat                    - Run bot normally (single instance)
-    echo   run.bat --sharded          - Run bot with automatic sharding
-    echo   run.bat --shard-manager N  - Run shard manager with N shards
-    echo   run.bat --help             - Show this help message
-    pause
-    exit /b 0
-) else (
-    echo Starting bot normally...
+    echo 🚀 Starting bot with manual sharding (%2 shards)...
+    python shard_manager.py --shards %2
+    goto :eof
+)
+
+if "%1"=="--help" (
+    call :show_help
+    goto :eof
+)
+
+if "%1"=="-h" (
+    call :show_help
+    goto :eof
+)
+
+if "%1"=="" (
+    echo 🚀 Starting bot (single instance)...
+    echo 🎵 LavaLink server will start automatically!
     python bot.py
-) 
+    goto :eof
+)
+
+echo ❌ Unknown option: %1
+call :show_help
+pause
+exit /b 1 
