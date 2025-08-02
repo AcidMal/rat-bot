@@ -21,8 +21,8 @@ BOT_VERSION = "1.0.0"
 
 # For automatic sharding, leave these as None
 # The bot will automatically determine the number of shards needed
-SHARD_COUNT = 5  # Set to a number if you want manual sharding
-SHARD_IDS = [0, 1, 2, 3, 4]    # Set to a list of shard IDs if you want manual sharding
+SHARD_COUNT = None  # Set to a number if you want manual sharding
+SHARD_IDS = None    # Set to a list of shard IDs if you want manual sharding
 
 # Database configuration
 DATABASE_PATH = "data/bot.db"

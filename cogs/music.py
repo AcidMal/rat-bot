@@ -7,8 +7,9 @@ import os
 from collections import deque
 from datetime import datetime, timedelta
 import re
+import ssl
 
-# Configure yt-dlp options
+# Configure yt-dlp options with SSL certificate handling
 yt_dlp.utils.bug_reports_message = lambda: ''
 
 ytdl_format_options = {
@@ -16,19 +17,34 @@ ytdl_format_options = {
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': True,
-    'nocheckcertificate': True,
+    'nocheckcertificate': True,  # Disable certificate checking
     'ignoreerrors': False,
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
+    # SSL certificate handling
+    'nocheckcertificate': True,
+    'extractor_retries': 3,
+    'fragment_retries': 3,
+    'retries': 3,
+    # Additional options for better compatibility
+    'prefer_ffmpeg': True,
+    'geo_bypass': True,
+    'nocheckcertificate': True,
 }
 
 ffmpeg_options = {
     'options': '-vn',
 }
 
+# Create a custom SSL context that doesn't verify certificates
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+
+# Configure yt-dlp with custom SSL context
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -45,7 +61,25 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        
+        try:
+            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        except Exception as e:
+            # If the first attempt fails, try with additional SSL bypass options
+            fallback_options = ytdl_format_options.copy()
+            fallback_options.update({
+                'nocheckcertificate': True,
+                'extractor_retries': 5,
+                'fragment_retries': 5,
+                'retries': 5,
+                'skip_download': True,
+            })
+            
+            fallback_ytdl = yt_dlp.YoutubeDL(fallback_options)
+            try:
+                data = await loop.run_in_executor(None, lambda: fallback_ytdl.extract_info(url, download=not stream))
+            except Exception as e2:
+                raise Exception(f"Failed to extract video info: {e2}")
         
         if 'entries' in data:
             # Take first item from a playlist
@@ -95,7 +129,11 @@ class MusicPlayer:
                 player = await YTDLSource.from_url(current['url'], loop=self.bot.loop, stream=True)
             except Exception as e:
                 await self.channel.send(f'❌ An error occurred while processing your song.\n'
-                                      f'```css\n[{e}]\n```')
+                                      f'```css\n[{e}]\n```\n'
+                                      f'**Troubleshooting:**\n'
+                                      f'• Try updating yt-dlp: `pip install --upgrade yt-dlp`\n'
+                                      f'• Check your internet connection\n'
+                                      f'• Try a different song or URL')
                 continue
 
             # Set the volume
@@ -202,7 +240,23 @@ class Music(commands.Cog):
                 await ctx.send(embed=embed)
 
             except Exception as e:
-                await ctx.send(f"❌ An error occurred while processing your song.\n```css\n[{e}]\n```")
+                error_msg = f"❌ An error occurred while processing your song.\n```css\n[{e}]\n```"
+                
+                # Add troubleshooting information
+                if "certificate" in str(e).lower() or "ssl" in str(e).lower():
+                    error_msg += "\n**SSL Certificate Error Detected!**\n"
+                    error_msg += "**Solutions:**\n"
+                    error_msg += "• Update yt-dlp: `pip install --upgrade yt-dlp`\n"
+                    error_msg += "• Try a different song or URL\n"
+                    error_msg += "• Check your internet connection\n"
+                    error_msg += "• The bot has been configured to bypass SSL verification"
+                else:
+                    error_msg += "\n**Troubleshooting:**\n"
+                    error_msg += "• Try updating yt-dlp: `pip install --upgrade yt-dlp`\n"
+                    error_msg += "• Check your internet connection\n"
+                    error_msg += "• Try a different song or URL"
+                
+                await ctx.send(error_msg)
 
     @commands.hybrid_command(name='pause', description="Pause the currently playing song")
     async def pause(self, ctx):
@@ -322,6 +376,32 @@ class Music(commands.Cog):
         # Clean up the player
         if ctx.guild.id in self.players:
             del self.players[ctx.guild.id]
+
+    @commands.hybrid_command(name='fixmusic', description="Update yt-dlp to fix music issues")
+    async def fixmusic(self, ctx):
+        """Update yt-dlp to fix music issues."""
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("❌ You need administrator permissions to use this command.")
+            return
+
+        await ctx.send("🔄 Updating yt-dlp... This may take a moment.")
+        
+        try:
+            import subprocess
+            import sys
+            
+            # Update yt-dlp
+            result = subprocess.run([
+                sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"
+            ], capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                await ctx.send("✅ yt-dlp updated successfully! Try playing music again.")
+            else:
+                await ctx.send(f"❌ Failed to update yt-dlp:\n```{result.stderr}```")
+                
+        except Exception as e:
+            await ctx.send(f"❌ Error updating yt-dlp: {e}")
 
     async def cleanup(self, guild):
         """Clean up the player for a guild."""

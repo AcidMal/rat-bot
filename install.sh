@@ -72,6 +72,10 @@ pip install --upgrade pip
 echo "Installing Python dependencies..."
 pip install -r requirements.txt
 
+# Update yt-dlp to latest version to prevent SSL issues
+echo "Updating yt-dlp to latest version..."
+pip install --upgrade yt-dlp
+
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
     echo "Creating .env file..."
@@ -179,4 +183,7 @@ echo "1. Edit the .env file and add your Discord bot token"
 echo "2. Run the bot with: ./run.sh"
 echo "3. Or manually with: source venv/bin/activate && python bot.py"
 echo ""
-echo "For help, check the README.md file" 
+echo "For help, check the README.md file"
+echo ""
+echo "💡 If you encounter SSL certificate errors with music:"
+echo "   Run: python update_ytdlp.py" 

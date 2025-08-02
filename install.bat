@@ -68,6 +68,10 @@ REM Install requirements
 echo Installing Python dependencies...
 pip install -r requirements.txt
 
+REM Update yt-dlp to latest version to prevent SSL issues
+echo Updating yt-dlp to latest version...
+pip install --upgrade yt-dlp
+
 REM Create .env file if it doesn't exist
 if not exist .env (
     echo Creating .env file...
@@ -173,4 +177,7 @@ echo 2. Run the bot with: run.bat
 echo 3. Or manually with: venv\Scripts\activate.bat ^&^& python bot.py
 echo.
 echo For help, check the README.md file
+echo.
+echo 💡 If you encounter SSL certificate errors with music:
+echo    Run: python update_ytdlp.py
 pause 
