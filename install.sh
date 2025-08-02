@@ -1,1098 +1,182 @@
 #!/bin/bash
 
-# Discord Bot Auto-Installation Script for Debian-based Systems
-# This script will install Node.js, FFmpeg, and set up the Discord bot
+# Rat Bot Auto-Installation Script
+# This script will install all dependencies and set up the bot
 
-echo "🤖 Discord Bot Auto-Installation Script"
-echo "========================================"
+echo "🤖 Rat Bot Installation Script"
+echo "=============================="
 
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-   echo "❌ This script should not be run as root. Please run as a regular user."
-   exit 1
-fi
-
-# Update system packages
-echo "📦 Updating system packages..."
-sudo apt update && sudo apt upgrade -y
-
-# Install Node.js (using NodeSource repository for latest version)
-echo "📦 Installing Node.js..."
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Verify Node.js installation
-echo "✅ Node.js version: $(node --version)"
-echo "✅ npm version: $(npm --version)"
-
-# Install FFmpeg
-echo "📦 Installing FFmpeg..."
-sudo apt install -y ffmpeg
-
-# Verify FFmpeg installation
-echo "✅ FFmpeg version: $(ffmpeg -version | head -n1)"
-
-# Create bot directory
-BOT_DIR="$HOME/discord-bot"
-echo "📁 Creating bot directory at $BOT_DIR..."
-mkdir -p "$BOT_DIR"
-cd "$BOT_DIR"
-
-# Create package.json
-echo "📄 Creating package.json..."
-cat > package.json << 'EOF'
-{
-  "name": "discord-bot-template",
-  "version": "1.0.0",
-  "description": "A template Discord bot using Discord.js",
-  "main": "src/index.js",
-  "scripts": {
-    "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
-    "deploy": "node src/deploy-commands.js",
-    "shard": "node src/shardManager.js",
-    "cluster": "node src/clusterManager.js",
-    "run": "node run.js",
-    "update": "node update.js",
-    "update:bash": "./update.sh",
-    "update:win": "update.bat"
-  },
-  "keywords": [
-    "discord",
-    "bot",
-    "discord.js",
-    "template"
-  ],
-  "author": "Your Name",
-  "license": "MIT",
-  "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.3.1",
-    "@discordjs/voice": "^0.16.1",
-    "play-dl": "^1.9.7",
-    "sodium": "^3.0.2",
-    "libsodium-wrappers": "^0.7.13",
-    "sqlite3": "^5.1.6",
-    "better-sqlite3": "^9.2.2",
-    "discord-hybrid-sharding": "^1.0.8"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
-  },
-  "engines": {
-    "node": ">=16.9.0"
-  }
-}
-EOF
-
-# Create .env file with user input
-echo "🔧 Setting up environment variables..."
-echo "Please provide the following information:"
-
-# Get Discord Bot Token
-echo "🔑 Please enter your Discord Bot Token:"
-echo "   (You can find this in the Discord Developer Portal under your application's Bot section)"
-while true; do
-    read -p "Discord Bot Token: " DISCORD_TOKEN
-    if [[ ${#DISCORD_TOKEN} -ge 50 ]]; then
-        echo "✅ Token length looks good!"
-        break
-    else
-        echo "❌ Invalid token. Please enter a valid Discord bot token (should be at least 50 characters)."
-    fi
-done
-
-# Get Client ID
-echo ""
-echo "🆔 Please enter your Discord Client ID:"
-echo "   (You can find this in the Discord Developer Portal under your application's General Information section)"
-while true; do
-    read -p "Client ID: " CLIENT_ID
-    if [[ $CLIENT_ID =~ ^[0-9]+$ ]] && [[ ${#CLIENT_ID} -ge 15 ]]; then
-        echo "✅ Client ID looks good!"
-        break
-    else
-        echo "❌ Invalid Client ID. Please enter a valid Discord client ID (should be numeric and at least 15 digits)."
-    fi
-done
-
-# Get Guild ID
-echo ""
-echo "🏠 Please enter your Discord Guild ID (Server ID):"
-echo "   (Right-click your server and select 'Copy Server ID')"
-while true; do
-    read -p "Guild ID: " GUILD_ID
-    if [[ $GUILD_ID =~ ^[0-9]+$ ]] && [[ ${#GUILD_ID} -ge 15 ]]; then
-        echo "✅ Guild ID looks good!"
-        break
-    else
-        echo "❌ Invalid Guild ID. Please enter a valid Discord guild ID (should be numeric and at least 15 digits)."
-    fi
-done
-
-echo ""
-echo "📋 Summary of your inputs:"
-echo "   Bot Token: ${DISCORD_TOKEN:0:10}..."
-echo "   Client ID: $CLIENT_ID"
-echo "   Guild ID: $GUILD_ID"
-echo ""
-
-# Create .env file
-echo "📄 Creating .env file with your credentials..."
-cat > .env << EOF
-# Discord Bot Configuration
-DISCORD_TOKEN=$DISCORD_TOKEN
-CLIENT_ID=$CLIENT_ID
-GUILD_ID=$GUILD_ID
-
-# Sharding Configuration (Optional)
-# Set to 'auto' for automatic sharding or specify a number
-TOTAL_SHARDS=auto
-
-# Clustering Configuration (Optional)
-# Set to 'auto' for automatic clustering or specify a number
-TOTAL_CLUSTERS=auto
-
-# Shard/Cluster ID (Set automatically by managers)
-SHARD_ID=
-CLUSTER_ID=
-EOF
-
-# Verify the .env file was created
-if [ -f ".env" ]; then
-    echo "✅ .env file created successfully!"
-    echo "📝 Your bot token: ${DISCORD_TOKEN:0:10}..."
-    echo "📝 Your client ID: $CLIENT_ID"
-    echo "📝 Your guild ID: $GUILD_ID"
-    
-    # Test that the variables were actually written to the file
-    if grep -q "DISCORD_TOKEN=$DISCORD_TOKEN" .env; then
-        echo "✅ Bot token successfully written to .env file"
-    else
-        echo "❌ Warning: Bot token may not have been written correctly"
-    fi
-    
-    if grep -q "CLIENT_ID=$CLIENT_ID" .env; then
-        echo "✅ Client ID successfully written to .env file"
-    else
-        echo "❌ Warning: Client ID may not have been written correctly"
-    fi
-    
-    if grep -q "GUILD_ID=$GUILD_ID" .env; then
-        echo "✅ Guild ID successfully written to .env file"
-    else
-        echo "❌ Warning: Guild ID may not have been written correctly"
-    fi
-else
-    echo "❌ Failed to create .env file!"
+# Check if Python 3.8+ is installed
+echo "Checking Python version..."
+python_version=$(python3 --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
+if [[ -z "$python_version" ]]; then
+    echo "❌ Python 3.8+ is required but not found."
+    echo "Please install Python 3.8 or higher and try again."
     exit 1
 fi
 
-# Create env.example
-cat > env.example << 'EOF'
-# Discord Bot Configuration
-DISCORD_TOKEN=your_discord_bot_token_here
-CLIENT_ID=your_client_id_here
-GUILD_ID=your_guild_id_here
-
-# Sharding Configuration (Optional)
-# Set to 'auto' for automatic sharding or specify a number
-TOTAL_SHARDS=auto
-
-# Clustering Configuration (Optional)
-# Set to 'auto' for automatic clustering or specify a number
-TOTAL_CLUSTERS=auto
-
-# Shard/Cluster ID (Set automatically by managers)
-SHARD_ID=
-CLUSTER_ID=
-EOF
-
-# Create .gitignore
-cat > .gitignore << 'EOF'
-# Dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Logs
-logs
-*.log
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-node_modules/
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variables file
-.env
-
-# Database files
-data/
-*.db
-*.sqlite
-*.sqlite3
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Temporary files
-tmp/
-temp/
-EOF
-
-# Create src directory structure
-echo "📁 Creating source directory structure..."
-mkdir -p src/{commands/{general,info,music,moderation},events,utils}
-
-# Create basic files
-touch src/index.js
-touch src/shardManager.js
-touch src/clusterManager.js
-touch src/deploy-commands.js
-touch src/events/ready.js
-touch src/events/interactionCreate.js
-touch src/events/messageCreate.js
-touch src/utils/musicManager.js
-touch src/utils/databaseManager.js
-
-# Install dependencies
-echo "📦 Installing Node.js dependencies..."
-npm install
-
-# Initialize git repository
-echo "📦 Initializing git repository..."
-git init
-git add .
-git commit -m "Initial bot setup"
-
-# Create helper scripts
-echo "📄 Creating helper scripts..."
-
-# start.sh
-cat > start.sh << 'EOF'
-#!/bin/bash
-echo "🤖 Starting Discord Bot..."
-npm start
-EOF
-
-# dev.sh
-cat > dev.sh << 'EOF'
-#!/bin/bash
-echo "🔧 Starting Discord Bot in development mode..."
-npm run dev
-EOF
-
-# deploy.sh
-cat > deploy.sh << 'EOF'
-#!/bin/bash
-echo "🚀 Deploying slash commands..."
-npm run deploy
-EOF
-
-# shard.sh
-cat > shard.sh << 'EOF'
-#!/bin/bash
-echo "🔧 Starting Discord Bot with sharding..."
-npm run shard
-EOF
-
-# cluster.sh
-cat > cluster.sh << 'EOF'
-#!/bin/bash
-echo "🔧 Starting Discord Bot with clustering..."
-npm run cluster
-EOF
-
-# update.sh
-cat > update.sh << 'EOF'
-#!/bin/bash
-
-# Discord Bot Updater Script
-# This script updates the bot from the GitHub repository and updates dependencies
-
-echo "🔄 Discord Bot Updater"
-echo "======================"
-
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-   echo "❌ This script should not be run as root. Please run as a regular user."
-   exit 1
-fi
-
-# Check if we're in a git repository
-if [ ! -d ".git" ]; then
-    echo "❌ This directory is not a git repository."
-    echo "Please run this script from your bot directory."
+required_version="3.8"
+if [[ "$(printf '%s\n' "$required_version" "$python_version" | sort -V | head -n1)" != "$required_version" ]]; then
+    echo "❌ Python $python_version found, but Python 3.8+ is required."
     exit 1
 fi
 
-# Check if git is installed
-if ! command -v git &> /dev/null; then
-    echo "❌ Git is not installed. Please install git first."
+echo "✅ Python $python_version found"
+
+# Check if pip is installed
+if ! command -v pip3 &> /dev/null; then
+    echo "❌ pip3 is not installed. Please install pip and try again."
     exit 1
 fi
 
-# Check if npm is installed
-if ! command -v npm &> /dev/null; then
-    echo "❌ npm is not installed. Please install Node.js first."
-    exit 1
-fi
+echo "✅ pip3 found"
 
-echo "📦 Checking for updates..."
-
-# Store current branch
-CURRENT_BRANCH=$(git branch --show-current)
-echo "📍 Current branch: $CURRENT_BRANCH"
-
-# Fetch latest changes
-echo "📥 Fetching latest changes from remote..."
-git fetch origin
-
-# Check if there are any updates
-LOCAL_COMMIT=$(git rev-parse HEAD)
-REMOTE_COMMIT=$(git rev-parse origin/$CURRENT_BRANCH)
-
-if [ "$LOCAL_COMMIT" = "$REMOTE_COMMIT" ]; then
-    echo "✅ Bot is already up to date!"
+# Check if FFmpeg is installed
+echo "Checking for FFmpeg..."
+if ! command -v ffmpeg &> /dev/null; then
+    echo "⚠️  FFmpeg not found. Music functionality requires FFmpeg."
+    echo "Please install FFmpeg:"
+    echo "  Ubuntu/Debian: sudo apt install ffmpeg"
+    echo "  macOS: brew install ffmpeg"
+    echo "  CentOS/RHEL: sudo yum install ffmpeg"
     echo ""
-    echo "Would you like to update dependencies anyway? (y/N)"
-    read -r update_deps
-    if [[ $update_deps =~ ^[Yy]$ ]]; then
-        echo "📦 Updating dependencies..."
-        npm update
-        echo "✅ Dependencies updated!"
-    else
-        echo "🔄 No updates needed."
-        exit 0
-    fi
-else
-    echo "🔄 Updates found! Pulling latest changes..."
-    
-    # Check for uncommitted changes
-    if [ -n "$(git status --porcelain)" ]; then
-        echo "⚠️  Warning: You have uncommitted changes."
-        echo "Your changes will be stashed before pulling."
-        echo "Continue? (y/N)"
-        read -r continue_update
-        if [[ ! $continue_update =~ ^[Yy]$ ]]; then
-            echo "❌ Update cancelled."
-            exit 1
-        fi
-        
-        # Stash changes
-        echo "📦 Stashing local changes..."
-        git stash push -m "Auto-stash before update $(date)"
-    fi
-    
-    # Pull latest changes
-    echo "📥 Pulling latest changes..."
-    if git pull origin $CURRENT_BRANCH; then
-        echo "✅ Successfully pulled latest changes!"
-        
-        # Update dependencies
-        echo "📦 Updating dependencies..."
-        npm update
-        
-        # Install any new dependencies
-        echo "📦 Installing any new dependencies..."
-        npm install
-        
-        echo "✅ Bot updated successfully!"
-        
-        # Show recent commits
-        echo ""
-        echo "📝 Recent changes:"
-        git log --oneline -5
-        
-        # Restore stashed changes if any
-        if git stash list | grep -q "Auto-stash before update"; then
-            echo ""
-            echo "📦 Restoring your local changes..."
-            if git stash pop; then
-                echo "✅ Local changes restored!"
-            else
-                echo "⚠️  Warning: Could not automatically restore local changes."
-                echo "You can restore them manually with: git stash pop"
-            fi
-        fi
-        
-    else
-        echo "❌ Failed to pull latest changes."
-        echo "Please check your internet connection and try again."
+    read -p "Continue without FFmpeg? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Installation cancelled. Please install FFmpeg and try again."
         exit 1
     fi
-fi
-
-# Check for any new environment variables
-echo ""
-echo "🔧 Checking for new environment variables..."
-if [ -f "env.example" ]; then
-    if [ -f ".env" ]; then
-        # Compare .env with env.example to find new variables
-        NEW_VARS=$(comm -23 <(grep -E '^[A-Z_]+=' env.example | cut -d'=' -f1 | sort) <(grep -E '^[A-Z_]+=' .env | cut -d'=' -f1 | sort))
-        
-        if [ -n "$NEW_VARS" ]; then
-            echo "⚠️  New environment variables found:"
-            echo "$NEW_VARS"
-            echo ""
-            echo "Please update your .env file with these new variables."
-        else
-            echo "✅ Environment variables are up to date."
-        fi
-    else
-        echo "⚠️  No .env file found. Please create one based on env.example"
-    fi
-fi
-
-# Check for any new scripts
-echo ""
-echo "🔧 Checking for new scripts..."
-if [ -f "package.json" ]; then
-    # Check if there are new scripts in package.json
-    echo "Available npm scripts:"
-    npm run 2>/dev/null | grep -E "^  [a-z-]+" | sed 's/^  /  npm run /'
-fi
-
-# Final status
-echo ""
-echo "🎉 Update completed!"
-echo ""
-echo "Next steps:"
-echo "1. Review any new environment variables and update your .env file"
-echo "2. Test your bot: npm start"
-echo "3. Deploy any new commands: npm run deploy"
-echo ""
-echo "If you encounter any issues, check the logs and ensure all dependencies are properly installed."
-EOF
-
-# update.bat
-cat > update.bat << 'EOF'
-@echo off
-setlocal enabledelayedexpansion
-
-REM Discord Bot Updater Script for Windows
-REM This script updates the bot from the GitHub repository and updates dependencies
-
-echo 🔄 Discord Bot Updater
-echo ======================
-echo.
-
-REM Check if we're in a git repository
-if not exist ".git" (
-    echo ❌ This directory is not a git repository.
-    echo Please run this script from your bot directory.
-    pause
-    exit /b 1
-)
-
-REM Check if git is installed
-git --version >nul 2>&1
-if errorlevel 1 (
-    echo ❌ Git is not installed. Please install git first.
-    pause
-    exit /b 1
-)
-
-REM Check if npm is installed
-npm --version >nul 2>&1
-if errorlevel 1 (
-    echo ❌ npm is not installed. Please install Node.js first.
-    pause
-    exit /b 1
-)
-
-echo 📦 Checking for updates...
-
-REM Store current branch
-for /f "tokens=*" %%i in ('git branch --show-current') do set CURRENT_BRANCH=%%i
-echo 📍 Current branch: !CURRENT_BRANCH!
-
-REM Fetch latest changes
-echo 📥 Fetching latest changes from remote...
-git fetch origin
-
-REM Check if there are any updates
-for /f "tokens=*" %%i in ('git rev-parse HEAD') do set LOCAL_COMMIT=%%i
-for /f "tokens=*" %%i in ('git rev-parse origin/!CURRENT_BRANCH!') do set REMOTE_COMMIT=%%i
-
-if "!LOCAL_COMMIT!"=="!REMOTE_COMMIT!" (
-    echo ✅ Bot is already up to date!
-    echo.
-    set /p update_deps="Would you like to update dependencies anyway? (y/N): "
-    if /i "!update_deps!"=="y" (
-        echo 📦 Updating dependencies...
-        npm update
-        echo ✅ Dependencies updated!
-    ) else (
-        echo 🔄 No updates needed.
-        pause
-        exit /b 0
-    )
-) else (
-    echo 🔄 Updates found! Pulling latest changes...
-    
-    REM Check for uncommitted changes
-    git status --porcelain >nul 2>&1
-    if not errorlevel 1 (
-        echo ⚠️  Warning: You have uncommitted changes.
-        echo Your changes will be stashed before pulling.
-        set /p continue_update="Continue? (y/N): "
-        if /i not "!continue_update!"=="y" (
-            echo ❌ Update cancelled.
-            pause
-            exit /b 1
-        )
-        
-        REM Stash changes
-        echo 📦 Stashing local changes...
-        git stash push -m "Auto-stash before update %date% %time%"
-    )
-    
-    REM Pull latest changes
-    echo 📥 Pulling latest changes...
-    git pull origin !CURRENT_BRANCH!
-    if not errorlevel 1 (
-        echo ✅ Successfully pulled latest changes!
-        
-        REM Update dependencies
-        echo 📦 Updating dependencies...
-        npm update
-        
-        REM Install any new dependencies
-        echo 📦 Installing any new dependencies...
-        npm install
-        
-        echo ✅ Bot updated successfully!
-        
-        REM Show recent commits
-        echo.
-        echo 📝 Recent changes:
-        git log --oneline -5
-        
-        REM Restore stashed changes if any
-        git stash list | findstr "Auto-stash before update" >nul 2>&1
-        if not errorlevel 1 (
-            echo.
-            echo 📦 Restoring your local changes...
-            git stash pop
-            if not errorlevel 1 (
-                echo ✅ Local changes restored!
-            ) else (
-                echo ⚠️  Warning: Could not automatically restore local changes.
-                echo You can restore them manually with: git stash pop
-            )
-        )
-        
-    ) else (
-        echo ❌ Failed to pull latest changes.
-        echo Please check your internet connection and try again.
-        pause
-        exit /b 1
-    )
-)
-
-REM Check for any new environment variables
-echo.
-echo 🔧 Checking for new environment variables...
-if exist "env.example" (
-    if exist ".env" (
-        echo ✅ Environment variables file exists.
-        echo Please manually check env.example for any new variables.
-    ) else (
-        echo ⚠️  No .env file found. Please create one based on env.example
-    )
-)
-
-REM Check for any new scripts
-echo.
-echo 🔧 Checking for new scripts...
-if exist "package.json" (
-    echo Available npm scripts:
-    npm run 2>nul | findstr /r "^  [a-z-]+" | findstr /v "npm ERR!"
-)
-
-REM Final status
-echo.
-echo 🎉 Update completed!
-echo.
-echo Next steps:
-echo 1. Review any new environment variables and update your .env file
-echo 2. Test your bot: npm start
-echo 3. Deploy any new commands: npm run deploy
-echo.
-echo If you encounter any issues, check the logs and ensure all dependencies are properly installed.
-
-pause
-EOF
-
-# update.js
-cat > update.js << 'EOF'
-#!/usr/bin/env node
-
-const { execSync, spawn } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-console.log('🔄 Discord Bot Updater');
-console.log('======================');
-console.log('');
-
-// Check if we're in a git repository
-if (!fs.existsSync('.git')) {
-  console.log('❌ This directory is not a git repository.');
-  console.log('Please run this script from your bot directory.');
-  process.exit(1);
-}
-
-// Check if git is installed
-try {
-  execSync('git --version', { stdio: 'ignore' });
-} catch (error) {
-  console.log('❌ Git is not installed. Please install git first.');
-  process.exit(1);
-}
-
-// Check if npm is installed
-try {
-  execSync('npm --version', { stdio: 'ignore' });
-} catch (error) {
-  console.log('❌ npm is not installed. Please install Node.js first.');
-  process.exit(1);
-}
-
-async function question(prompt) {
-  return new Promise((resolve) => {
-    rl.question(prompt, resolve);
-  });
-}
-
-async function runCommand(command, options = {}) {
-  try {
-    const result = execSync(command, { 
-      encoding: 'utf8', 
-      stdio: options.silent ? 'ignore' : 'inherit',
-      ...options 
-    });
-    return { success: true, output: result };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-async function main() {
-  console.log('📦 Checking for updates...');
-
-  // Get current branch
-  const branchResult = await runCommand('git branch --show-current', { silent: true });
-  if (!branchResult.success) {
-    console.log('❌ Failed to get current branch.');
-    process.exit(1);
-  }
-  const currentBranch = branchResult.output.trim();
-  console.log(`📍 Current branch: ${currentBranch}`);
-
-  // Fetch latest changes
-  console.log('📥 Fetching latest changes from remote...');
-  const fetchResult = await runCommand('git fetch origin');
-  if (!fetchResult.success) {
-    console.log('❌ Failed to fetch from remote.');
-    process.exit(1);
-  }
-
-  // Check if there are any updates
-  const localCommitResult = await runCommand('git rev-parse HEAD', { silent: true });
-  const remoteCommitResult = await runCommand(`git rev-parse origin/${currentBranch}`, { silent: true });
-  
-  if (!localCommitResult.success || !remoteCommitResult.success) {
-    console.log('❌ Failed to get commit information.');
-    process.exit(1);
-  }
-
-  const localCommit = localCommitResult.output.trim();
-  const remoteCommit = remoteCommitResult.output.trim();
-
-  if (localCommit === remoteCommit) {
-    console.log('✅ Bot is already up to date!');
-    console.log('');
-    
-    const updateDeps = await question('Would you like to update dependencies anyway? (y/N): ');
-    if (updateDeps.toLowerCase() === 'y') {
-      console.log('📦 Updating dependencies...');
-      await runCommand('npm update');
-      console.log('✅ Dependencies updated!');
-    } else {
-      console.log('🔄 No updates needed.');
-      rl.close();
-      return;
-    }
-  } else {
-    console.log('🔄 Updates found! Pulling latest changes...');
-    
-    // Check for uncommitted changes
-    const statusResult = await runCommand('git status --porcelain', { silent: true });
-    const hasChanges = statusResult.success && statusResult.output.trim() !== '';
-    
-    if (hasChanges) {
-      console.log('⚠️  Warning: You have uncommitted changes.');
-      console.log('Your changes will be stashed before pulling.');
-      const continueUpdate = await question('Continue? (y/N): ');
-      if (continueUpdate.toLowerCase() !== 'y') {
-        console.log('❌ Update cancelled.');
-        rl.close();
-        return;
-      }
-      
-      // Stash changes
-      console.log('📦 Stashing local changes...');
-      await runCommand(`git stash push -m "Auto-stash before update ${new Date().toISOString()}"`);
-    }
-    
-    // Pull latest changes
-    console.log('📥 Pulling latest changes...');
-    const pullResult = await runCommand(`git pull origin ${currentBranch}`);
-    
-    if (pullResult.success) {
-      console.log('✅ Successfully pulled latest changes!');
-      
-      // Update dependencies
-      console.log('📦 Updating dependencies...');
-      await runCommand('npm update');
-      
-      // Install any new dependencies
-      console.log('📦 Installing any new dependencies...');
-      await runCommand('npm install');
-      
-      console.log('✅ Bot updated successfully!');
-      
-      // Show recent commits
-      console.log('');
-      console.log('📝 Recent changes:');
-      await runCommand('git log --oneline -5');
-      
-      // Restore stashed changes if any
-      const stashListResult = await runCommand('git stash list', { silent: true });
-      if (stashListResult.success && stashListResult.output.includes('Auto-stash before update')) {
-        console.log('');
-        console.log('📦 Restoring your local changes...');
-        const stashPopResult = await runCommand('git stash pop');
-        if (stashPopResult.success) {
-          console.log('✅ Local changes restored!');
-        } else {
-          console.log('⚠️  Warning: Could not automatically restore local changes.');
-          console.log('You can restore them manually with: git stash pop');
-        }
-      }
-      
-    } else {
-      console.log('❌ Failed to pull latest changes.');
-      console.log('Please check your internet connection and try again.');
-      process.exit(1);
-    }
-  }
-
-  // Check for any new environment variables
-  console.log('');
-  console.log('🔧 Checking for new environment variables...');
-  if (fs.existsSync('env.example')) {
-    if (fs.existsSync('.env')) {
-      console.log('✅ Environment variables file exists.');
-      console.log('Please manually check env.example for any new variables.');
-    } else {
-      console.log('⚠️  No .env file found. Please create one based on env.example');
-    }
-  }
-
-  // Check for any new scripts
-  console.log('');
-  console.log('🔧 Checking for new scripts...');
-  if (fs.existsSync('package.json')) {
-    console.log('Available npm scripts:');
-    const scriptsResult = await runCommand('npm run', { silent: true });
-    if (scriptsResult.success) {
-      const lines = scriptsResult.output.split('\n');
-      lines.forEach(line => {
-        if (line.match(/^  [a-z-]+$/)) {
-          console.log(`  npm run ${line.trim()}`);
-        }
-      });
-    }
-  }
-
-  // Final status
-  console.log('');
-  console.log('🎉 Update completed!');
-  console.log('');
-  console.log('Next steps:');
-  console.log('1. Review any new environment variables and update your .env file');
-  console.log('2. Test your bot: npm start');
-  console.log('3. Deploy any new commands: npm run deploy');
-  console.log('');
-  console.log('If you encounter any issues, check the logs and ensure all dependencies are properly installed.');
-
-  rl.close();
-}
-
-main().catch(error => {
-  console.error('❌ An error occurred:', error.message);
-  rl.close();
-  process.exit(1);
-});
-EOF
-
-# run.js
-cat > run.js << 'EOF'
-#!/usr/bin/env node
-
-const { spawn } = require('child_process');
-const readline = require('readline');
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-console.log('🤖 Discord Bot Launcher');
-console.log('========================');
-console.log('');
-console.log('Choose how to run your bot:');
-console.log('1. Normal mode (single process)');
-console.log('2. Sharded mode (multiple shards)');
-console.log('3. Clustered mode (multiple processes)');
-console.log('4. Development mode (with auto-restart)');
-console.log('5. Deploy commands only');
-console.log('');
-
-rl.question('Enter your choice (1-5): ', (choice) => {
-  let command;
-  let description;
-
-  switch (choice.trim()) {
-    case '1':
-      command = 'npm start';
-      description = 'Starting bot in normal mode...';
-      break;
-    case '2':
-      command = 'npm run shard';
-      description = 'Starting bot with sharding...';
-      break;
-    case '3':
-      command = 'npm run cluster';
-      description = 'Starting bot with clustering...';
-      break;
-    case '4':
-      command = 'npm run dev';
-      description = 'Starting bot in development mode...';
-      break;
-    case '5':
-      command = 'npm run deploy';
-      description = 'Deploying slash commands...';
-      break;
-    default:
-      console.log('❌ Invalid choice. Please run the script again.');
-      rl.close();
-      return;
-  }
-
-  console.log(`\n${description}`);
-  console.log('Press Ctrl+C to stop the bot\n');
-
-  const child = spawn(command, [], {
-    stdio: 'inherit',
-    shell: true
-  });
-
-  child.on('error', (error) => {
-    console.error('❌ Error starting bot:', error.message);
-    rl.close();
-  });
-
-  child.on('close', (code) => {
-    console.log(`\n✅ Bot process exited with code ${code}`);
-    rl.close();
-  });
-
-  // Handle process termination
-  process.on('SIGINT', () => {
-    console.log('\n🛑 Stopping bot...');
-    child.kill('SIGINT');
-  });
-
-  process.on('SIGTERM', () => {
-    console.log('\n🛑 Stopping bot...');
-    child.kill('SIGTERM');
-  });
-});
-EOF
-
-# update-standalone.sh
-cat > update-standalone.sh << 'EOF'
-#!/bin/bash
-
-# Discord Bot Standalone Updater Script
-# This script updates dependencies and provides guidance for manual updates
-
-echo "🔄 Discord Bot Standalone Updater"
-echo "=================================="
-
-# Check if running as root
-if [[ $EUID -eq 0 ]]; then
-   echo "❌ This script should not be run as root. Please run as a regular user."
-   exit 1
-fi
-
-# Check if npm is installed
-if ! command -v npm &> /dev/null; then
-    echo "❌ npm is not installed. Please install Node.js first."
-    exit 1
-fi
-
-echo "📦 Checking for updates..."
-
-# Check if package.json exists
-if [ ! -f "package.json" ]; then
-    echo "❌ package.json not found. Please run this script from your bot directory."
-    exit 1
-fi
-
-echo "✅ Found package.json"
-
-# Update dependencies
-echo "📦 Updating dependencies..."
-npm update
-
-# Install any new dependencies
-echo "📦 Installing any new dependencies..."
-npm install
-
-echo "✅ Dependencies updated successfully!"
-
-# Check for any new environment variables
-echo ""
-echo "🔧 Checking for new environment variables..."
-if [ -f "env.example" ]; then
-    if [ -f ".env" ]; then
-        echo "✅ Environment variables file exists."
-        echo "Please manually check env.example for any new variables."
-    else
-        echo "⚠️  No .env file found. Please create one based on env.example"
-    fi
 else
-    echo "⚠️  No env.example file found. Please check for updates manually."
+    echo "✅ FFmpeg found"
 fi
 
-# Check for any new scripts
-echo ""
-echo "🔧 Checking for new scripts..."
-if [ -f "package.json" ]; then
-    echo "Available npm scripts:"
-    npm run 2>/dev/null | grep -E "^  [a-z-]+" | sed 's/^  /  npm run /' || echo "No scripts found"
+# Create virtual environment
+echo "Creating virtual environment..."
+if [ -d "venv" ]; then
+    echo "Virtual environment already exists, removing..."
+    rm -rf venv
 fi
 
-# Provide guidance for manual updates
-echo ""
-echo "📚 Manual Update Instructions:"
-echo "Since this bot was installed without git, you'll need to manually update:"
-echo ""
-echo "1. Download the latest version from the repository"
-echo "2. Compare files with your current installation"
-echo "3. Copy new files and update existing ones"
-echo "4. Run this script again to update dependencies"
-echo ""
-echo "Alternatively, you can:"
-echo "1. Initialize git: git init"
-echo "2. Add remote: git remote add origin <repository-url>"
-echo "3. Use the regular updater: ./update.sh"
-echo ""
+python3 -m venv venv
+echo "✅ Virtual environment created"
 
-# Final status
+# Activate virtual environment
+echo "Activating virtual environment..."
+source venv/bin/activate
+
+# Upgrade pip
+echo "Upgrading pip..."
+pip install --upgrade pip
+
+# Install requirements
+echo "Installing Python dependencies..."
+pip install -r requirements.txt
+
+# Create .env file if it doesn't exist
+if [ ! -f ".env" ]; then
+    echo "Creating .env file..."
+    cp example.env .env
+    echo "✅ .env file created from template"
+    echo "⚠️  Please edit .env file and add your Discord bot token!"
+else
+    echo "✅ .env file already exists"
+fi
+
+# Create database directory
+echo "Setting up database..."
+mkdir -p data
+touch data/bot.db
+
+# Set up database
+echo "Initializing database..."
+python3 -c "
+import sqlite3
+import os
+
+# Create database connection
+conn = sqlite3.connect('data/bot.db')
+cursor = conn.cursor()
+
+# Create mod_logs table
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS mod_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        moderator_id INTEGER NOT NULL,
+        action_type TEXT NOT NULL,
+        reason TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+
+# Create user_warnings table
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_warnings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        moderator_id INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+
+# Create custom_commands table
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS custom_commands (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id INTEGER NOT NULL,
+        command_name TEXT NOT NULL,
+        response TEXT NOT NULL,
+        created_by INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+
+# Create server_settings table
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS server_settings (
+        guild_id INTEGER PRIMARY KEY,
+        mod_log_channel INTEGER,
+        welcome_channel INTEGER,
+        welcome_message TEXT,
+        prefix TEXT DEFAULT '!',
+        auto_role INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+
+# Create user_stats table
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_stats (
+        user_id INTEGER NOT NULL,
+        guild_id INTEGER NOT NULL,
+        messages_sent INTEGER DEFAULT 0,
+        commands_used INTEGER DEFAULT 0,
+        last_message DATETIME,
+        joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (user_id, guild_id)
+    )
+''')
+
+conn.commit()
+conn.close()
+print('✅ Database initialized successfully')
+"
+
+# Create logs directory
+mkdir -p logs
+
+# Make the script executable
+chmod +x run.sh
+
 echo ""
-echo "🎉 Update completed!"
+echo "🎉 Installation completed successfully!"
 echo ""
 echo "Next steps:"
-echo "1. Review any new environment variables and update your .env file"
-echo "2. Test your bot: npm start"
-echo "3. Deploy any new commands: npm run deploy"
+echo "1. Edit the .env file and add your Discord bot token"
+echo "2. Run the bot with: ./run.sh"
+echo "3. Or manually with: source venv/bin/activate && python bot.py"
 echo ""
-echo "If you encounter any issues, check the logs and ensure all dependencies are properly installed."
-EOF
-
-# Make scripts executable
-chmod +x start.sh dev.sh deploy.sh shard.sh cluster.sh update.sh update.js run.js update-standalone.sh
-
-echo ""
-echo "✅ Installation completed successfully!"
-echo ""
-echo "📁 Bot directory: $BOT_DIR"
-echo "🔧 Environment file: $BOT_DIR/.env (already configured)"
-echo ""
-echo "🚀 Available commands:"
-echo "  ./start.sh    - Start the bot normally"
-echo "  ./dev.sh      - Start the bot in development mode"
-echo "  ./deploy.sh   - Deploy slash commands"
-echo "  ./shard.sh    - Start the bot with sharding"
-echo "  ./cluster.sh  - Start the bot with clustering"
-echo "  ./update.sh   - Update bot from GitHub repository (requires git)"
-echo "  ./update-standalone.sh - Update dependencies only (no git required)"
-echo "  npm run update - Update using Node.js script"
-echo ""
-echo "📚 Next steps:"
-echo "1. Add your bot to your Discord server"
-echo "2. Run './deploy.sh' to register slash commands"
-echo "3. Run './start.sh' to start the bot"
-echo "4. For large bots, consider using './shard.sh' or './cluster.sh'"
-echo "5. Use './update.sh' to keep your bot updated"
-echo ""
-echo "📖 For more information, check the README.md file"
-echo ""
-echo "🎉 Your Discord bot is ready to use!" 
+echo "For help, check the README.md file" 
