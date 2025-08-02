@@ -90,36 +90,55 @@ echo "🔧 Setting up environment variables..."
 echo "Please provide the following information:"
 
 # Get Discord Bot Token
+echo "🔑 Please enter your Discord Bot Token:"
+echo "   (You can find this in the Discord Developer Portal under your application's Bot section)"
 while true; do
     read -p "Discord Bot Token: " DISCORD_TOKEN
     if [[ ${#DISCORD_TOKEN} -ge 50 ]]; then
+        echo "✅ Token length looks good!"
         break
     else
-        echo "❌ Invalid token. Please enter a valid Discord bot token."
+        echo "❌ Invalid token. Please enter a valid Discord bot token (should be at least 50 characters)."
     fi
 done
 
 # Get Client ID
+echo ""
+echo "🆔 Please enter your Discord Client ID:"
+echo "   (You can find this in the Discord Developer Portal under your application's General Information section)"
 while true; do
     read -p "Client ID: " CLIENT_ID
     if [[ $CLIENT_ID =~ ^[0-9]+$ ]] && [[ ${#CLIENT_ID} -ge 15 ]]; then
+        echo "✅ Client ID looks good!"
         break
     else
-        echo "❌ Invalid Client ID. Please enter a valid Discord client ID."
+        echo "❌ Invalid Client ID. Please enter a valid Discord client ID (should be numeric and at least 15 digits)."
     fi
 done
 
 # Get Guild ID
+echo ""
+echo "🏠 Please enter your Discord Guild ID (Server ID):"
+echo "   (Right-click your server and select 'Copy Server ID')"
 while true; do
     read -p "Guild ID: " GUILD_ID
     if [[ $GUILD_ID =~ ^[0-9]+$ ]] && [[ ${#GUILD_ID} -ge 15 ]]; then
+        echo "✅ Guild ID looks good!"
         break
     else
-        echo "❌ Invalid Guild ID. Please enter a valid Discord guild ID."
+        echo "❌ Invalid Guild ID. Please enter a valid Discord guild ID (should be numeric and at least 15 digits)."
     fi
 done
 
+echo ""
+echo "📋 Summary of your inputs:"
+echo "   Bot Token: ${DISCORD_TOKEN:0:10}..."
+echo "   Client ID: $CLIENT_ID"
+echo "   Guild ID: $GUILD_ID"
+echo ""
+
 # Create .env file
+echo "📄 Creating .env file with your credentials..."
 cat > .env << EOF
 # Discord Bot Configuration
 DISCORD_TOKEN=$DISCORD_TOKEN
@@ -138,6 +157,36 @@ TOTAL_CLUSTERS=auto
 SHARD_ID=
 CLUSTER_ID=
 EOF
+
+# Verify the .env file was created
+if [ -f ".env" ]; then
+    echo "✅ .env file created successfully!"
+    echo "📝 Your bot token: ${DISCORD_TOKEN:0:10}..."
+    echo "📝 Your client ID: $CLIENT_ID"
+    echo "📝 Your guild ID: $GUILD_ID"
+    
+    # Test that the variables were actually written to the file
+    if grep -q "DISCORD_TOKEN=$DISCORD_TOKEN" .env; then
+        echo "✅ Bot token successfully written to .env file"
+    else
+        echo "❌ Warning: Bot token may not have been written correctly"
+    fi
+    
+    if grep -q "CLIENT_ID=$CLIENT_ID" .env; then
+        echo "✅ Client ID successfully written to .env file"
+    else
+        echo "❌ Warning: Client ID may not have been written correctly"
+    fi
+    
+    if grep -q "GUILD_ID=$GUILD_ID" .env; then
+        echo "✅ Guild ID successfully written to .env file"
+    else
+        echo "❌ Warning: Guild ID may not have been written correctly"
+    fi
+else
+    echo "❌ Failed to create .env file!"
+    exit 1
+fi
 
 # Create env.example
 cat > env.example << 'EOF'
