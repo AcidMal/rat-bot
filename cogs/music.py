@@ -4,12 +4,12 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from pathlib import Path
-import youtube_dl
+import yt_dlp
 import ssl
 from datetime import timedelta
 
-# Configure youtube-dl options with SSL certificate handling
-youtube_dl.utils.bug_reports_message = lambda: ''
+# Configure yt-dlp options with SSL certificate handling
+yt_dlp.utils.bug_reports_message = lambda: ''
 
 ytdl_format_options = {
     'format': 'bestaudio/best',
@@ -32,6 +32,9 @@ ytdl_format_options = {
     'prefer_ffmpeg': True,
     'geo_bypass': True,
     'nocheckcertificate': True,
+    # Cookie handling to avoid sign-in prompts
+    'cookiefile': None,
+    'no_cookies': True,
 }
 
 ffmpeg_options = {
@@ -43,8 +46,8 @@ ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
 
-# Configure youtube-dl with custom SSL context
-ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+# Configure yt-dlp with custom SSL context
+ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 def extract_info(url, download=True):
     """Extract info from URL using ytdl."""
@@ -59,8 +62,9 @@ def extract_info_fallback(url, download=True):
         'fragment_retries': 5,
         'retries': 5,
         'skip_download': True,
+        'no_cookies': True,
     })
-    fallback_ytdl = youtube_dl.YoutubeDL(fallback_options)
+    fallback_ytdl = yt_dlp.YoutubeDL(fallback_options)
     return fallback_ytdl.extract_info(url, download=download)
 
 # 20 minutes, in seconds
@@ -188,7 +192,7 @@ class Song(dict):
 
     def download_info(self, url: str, author: discord.Member):
         try:
-            # Use youtube-dl instead of yt-dlp
+            # Use yt-dlp instead of youtube_dl
             data = extract_info(url, download=False)
             
             if not url.startswith('https'):
@@ -290,13 +294,19 @@ class Music(commands.Cog):
             if "certificate" in str(e).lower() or "ssl" in str(e).lower():
                 error_msg += "\n**SSL Certificate Error Detected!**\n"
                 error_msg += "**Solutions:**\n"
-                error_msg += "• Update youtube-dl: `pip install --upgrade youtube-dl`\n"
+                error_msg += "• Update yt-dlp: `pip install --upgrade yt-dlp`\n"
                 error_msg += "• Try a different song or URL\n"
                 error_msg += "• Check your internet connection\n"
                 error_msg += "• The bot has been configured to bypass SSL verification"
+            elif "sign in" in str(e).lower() or "login" in str(e).lower():
+                error_msg += "\n**Authentication Error Detected!**\n"
+                error_msg += "**Solutions:**\n"
+                error_msg += "• Update yt-dlp: `pip install --upgrade yt-dlp`\n"
+                error_msg += "• Try a different song or URL\n"
+                error_msg += "• The bot has been configured to bypass authentication"
             else:
                 error_msg += "\n**Troubleshooting:**\n"
-                error_msg += "• Try updating youtube-dl: `pip install --upgrade youtube-dl`\n"
+                error_msg += "• Try updating yt-dlp: `pip install --upgrade yt-dlp`\n"
                 error_msg += "• Check your internet connection\n"
                 error_msg += "• Try a different song or URL"
             
@@ -499,31 +509,31 @@ class Music(commands.Cog):
         self.voice_clients[ctx.guild] = None
         await ctx.send("👋 Left the voice channel.")
 
-    @commands.hybrid_command(name='fixmusic', description="Update youtube-dl to fix music issues")
+    @commands.hybrid_command(name='fixmusic', description="Update yt-dlp to fix music issues")
     async def fixmusic(self, ctx):
-        """Update youtube-dl to fix music issues."""
+        """Update yt-dlp to fix music issues."""
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("❌ You need administrator permissions to use this command.")
             return
 
-        await ctx.send("🔄 Updating youtube-dl... This may take a moment.")
+        await ctx.send("🔄 Updating yt-dlp... This may take a moment.")
         
         try:
             import subprocess
             import sys
             
-            # Update youtube-dl
+            # Update yt-dlp
             result = subprocess.run([
-                sys.executable, "-m", "pip", "install", "--upgrade", "youtube-dl"
+                sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"
             ], capture_output=True, text=True)
             
             if result.returncode == 0:
-                await ctx.send("✅ youtube-dl updated successfully! Try playing music again.")
+                await ctx.send("✅ yt-dlp updated successfully! Try playing music again.")
             else:
-                await ctx.send(f"❌ Failed to update youtube-dl:\n```{result.stderr}```")
+                await ctx.send(f"❌ Failed to update yt-dlp:\n```{result.stderr}```")
                 
         except Exception as e:
-            await ctx.send(f"❌ Error updating youtube-dl: {e}")
+            await ctx.send(f"❌ Error updating yt-dlp: {e}")
 
     async def play_all_songs(self, guild: discord.Guild):
         """Play all songs in the queue."""
@@ -557,6 +567,7 @@ class Music(commands.Cog):
             }],
             'outtmpl': audio_path,
             'nocheckcertificate': True,  # SSL bypass
+            'no_cookies': True,  # Avoid authentication prompts
         }
 
         Path(audio_dir).mkdir(parents=True, exist_ok=True)
@@ -567,7 +578,7 @@ class Music(commands.Cog):
             pass
         
         try:
-            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([f'{song.url}'])
         except Exception as e:
             print(f'Error downloading song: {e}')
