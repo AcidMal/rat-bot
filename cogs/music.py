@@ -47,6 +47,23 @@ ssl_context.verify_mode = ssl.CERT_NONE
 # Configure yt-dlp with custom SSL context
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
+def extract_info(url, download=True):
+    """Extract info from URL using ytdl."""
+    return ytdl.extract_info(url, download=download)
+
+def extract_info_fallback(url, download=True):
+    """Extract info from URL using fallback options."""
+    fallback_options = ytdl_format_options.copy()
+    fallback_options.update({
+        'nocheckcertificate': True,
+        'extractor_retries': 5,
+        'fragment_retries': 5,
+        'retries': 5,
+        'skip_download': True,
+    })
+    fallback_ytdl = yt_dlp.YoutubeDL(fallback_options)
+    return fallback_ytdl.extract_info(url, download=download)
+
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
@@ -63,21 +80,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         try:
-            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+            data = await loop.run_in_executor(None, extract_info, url, not stream)
         except Exception as e:
             # If the first attempt fails, try with additional SSL bypass options
-            fallback_options = ytdl_format_options.copy()
-            fallback_options.update({
-                'nocheckcertificate': True,
-                'extractor_retries': 5,
-                'fragment_retries': 5,
-                'retries': 5,
-                'skip_download': True,
-            })
-            
-            fallback_ytdl = yt_dlp.YoutubeDL(fallback_options)
             try:
-                data = await loop.run_in_executor(None, lambda: fallback_ytdl.extract_info(url, download=not stream))
+                data = await loop.run_in_executor(None, extract_info_fallback, url, not stream)
             except Exception as e2:
                 raise Exception(f"Failed to extract video info: {e2}")
         
@@ -221,7 +228,7 @@ class Music(commands.Cog):
         async with ctx.typing():
             try:
                 # Extract info from the URL
-                data = await self.bot.loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False))
+                data = await self.bot.loop.run_in_executor(None, extract_info, query, False)
                 
                 if 'entries' in data:
                     # Take first item from a playlist
