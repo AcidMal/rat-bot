@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 import config
 from database import db
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -22,6 +23,9 @@ bot = commands.Bot(
     shard_count=config.SHARD_COUNT if hasattr(config, 'SHARD_COUNT') else None,
     shard_ids=config.SHARD_IDS if hasattr(config, 'SHARD_IDS') else None
 )
+
+# Track bot start time for uptime command
+bot.start_time = time.time()
 
 @bot.event
 async def on_ready():
@@ -136,15 +140,15 @@ async def load_extensions():
             except Exception as e:
                 logger.error(f"Failed to load extension {filename}: {e}")
 
-def main():
+async def main():
     """Main function to run the bot."""
     try:
         logger.info("Starting bot...")
         # Load extensions before running the bot
-        asyncio.run(load_extensions())
-        bot.run(config.DISCORD_TOKEN)
+        await load_extensions()
+        await bot.start(config.DISCORD_TOKEN)
     except Exception as e:
         logger.critical(f"Bot failed to start: {e}")
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

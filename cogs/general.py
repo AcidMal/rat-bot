@@ -9,17 +9,6 @@ class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @commands.hybrid_command(name='ping', description="Check the bot's latency")
-    async def ping(self, ctx):
-        """Check the bot's latency."""
-        latency = round(self.bot.latency * 1000)
-        embed = discord.Embed(
-            title="🏓 Pong!",
-            description=f"Bot latency: **{latency}ms**",
-            color=discord.Color.green()
-        )
-        await ctx.send(embed=embed)
-    
     @commands.hybrid_command(name='info', description="Display bot information")
     async def info(self, ctx):
         """Display bot information."""
@@ -48,7 +37,7 @@ class General(commands.Cog):
         
         # Get all cogs and their commands
         for cog_name, cog in self.bot.cogs.items():
-            if cog_name.lower() != "general":  # Skip general cog as we handle it separately
+            if cog_name.lower() not in ["general", "utility"]:  # Skip general and utility cogs as we handle them separately
                 cog_commands = [cmd.name for cmd in cog.get_commands() if not cmd.hidden]
                 if cog_commands:
                     embed.add_field(
@@ -58,10 +47,24 @@ class General(commands.Cog):
                     )
         
         # Add general commands
-        general_commands = ["ping", "info", "help", "echo"]
+        general_commands = ["info", "help", "echo"]
         embed.add_field(
             name="**General**",
             value=", ".join([f"`{config.BOT_PREFIX}{cmd}`" for cmd in general_commands]),
+            inline=False
+        )
+        
+        # Add utility commands
+        utility_commands = ["ping", "uptime", "system", "invite", "support", "about"]
+        embed.add_field(
+            name="**Utility**",
+            value=", ".join([f"`{config.BOT_PREFIX}{cmd}`" for cmd in utility_commands]),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="**Need Help?**",
+            value=f"• Use `{config.BOT_PREFIX}help <command>` for detailed help\n• Use `/help` for slash command help\n• Use `{config.BOT_PREFIX}support` for troubleshooting",
             inline=False
         )
         

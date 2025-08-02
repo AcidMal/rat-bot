@@ -10,7 +10,7 @@ if not DISCORD_TOKEN:
     raise ValueError("No Discord token found. Please set DISCORD_TOKEN in your .env file")
 
 # Bot settings
-BOT_PREFIX = "`"
+BOT_PREFIX = "!"
 BOT_NAME = "Rat Bot"
 BOT_VERSION = "1.0.0"
 
