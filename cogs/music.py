@@ -144,8 +144,13 @@ class MusicPlayer:
             if not voice_client:
                 continue
 
-            # Play the song
-            voice_client.play(player, after=lambda e: self.bot.loop.call_soon_threadsafe(self.next.set))
+            # Play the song with proper error handling
+            def after_playing(error):
+                if error:
+                    print(f"Error in after callback: {error}")
+                self.bot.loop.call_soon_threadsafe(self.next.set)
+
+            voice_client.play(player, after=after_playing)
 
             # Create the "Now Playing" embed
             embed = discord.Embed(title="🎵 Now Playing", color=discord.Color.green())
