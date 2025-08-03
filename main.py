@@ -109,12 +109,11 @@ class RatBot(commands.Bot):
         
         # Connect to Lavalink
         try:
-            await wavelink.NodePool.create_node(
-                bot=self,
-                host=Config.LAVALINK_HOST,
-                port=Config.LAVALINK_PORT,
+            node = wavelink.Node(
+                uri=f"http://{Config.LAVALINK_HOST}:{Config.LAVALINK_PORT}",
                 password=Config.LAVALINK_PASSWORD
             )
+            await wavelink.Pool.connect(nodes=[node], client=self)
             logger.info("Connected to Lavalink server")
         except Exception as e:
             logger.error(f"Failed to connect to Lavalink: {e}")
