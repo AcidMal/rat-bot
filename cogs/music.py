@@ -475,9 +475,14 @@ class Music(commands.Cog):
         track.requester = ctx.author
         track.requested_at = datetime.now(timezone.utc)
         
+        logger.info(f"Handling single track: {track.title} (URI: {track.uri[:50]}...)")
+        logger.info(f"Player currently playing: {player.playing}")
+        logger.info(f"Current queue size: {player.queue.count}")
+        
         if player.playing:
             # Add to queue
             await player.queue.put_wait(track)
+            logger.info(f"Added track to queue: {track.title} (Position: {player.queue.count})")
             
             embed = discord.Embed(
                 title="📝 Added to Queue",
@@ -602,6 +607,8 @@ class Music(commands.Cog):
         
         # Check permissions for skip
         if await self._can_skip(ctx, player):
+            logger.info(f"Skipping track: {player.current.title if player.current else 'Unknown'}")
+            logger.info(f"Queue size before skip: {player.queue.count}")
             await player.skip()
             embed = discord.Embed(
                 title="⏭️ Skipped",
@@ -789,6 +796,89 @@ class Music(commands.Cog):
                 )
         
         await ctx.send(embed=embed)
+    
+    @commands.command(name="queuelist", aliases=["ql"])
+    async def queue_list(self, ctx):
+        """List all tracks in queue with detailed info (admin only)"""
+        if not await self.bot.is_owner(ctx.author):
+            return await ctx.send("❌ This command is for bot owners only")
+            
+        player = self.get_player(ctx.guild)
+        if not player:
+            return await ctx.send("❌ Not connected to a voice channel")
+        
+        embed = discord.Embed(
+            title="📋 Detailed Queue List",
+            color=0x00aaff
+        )
+        
+        if player.current:
+            embed.add_field(
+                name="🎵 Currently Playing",
+                value=f"**{player.current.title}**\n"
+                      f"Source: {player.current.source}\n"
+                      f"URI: {player.current.uri[:50]}...",
+                inline=False
+            )
+        
+        if player.queue.is_empty:
+            embed.add_field(name="Queue", value="Empty", inline=False)
+        else:
+            queue_items = []
+            for i, track in enumerate(player.queue):
+                queue_items.append(
+                    f"**{i+1}.** {track.title}\n"
+                    f"   Source: {track.source}\n"
+                    f"   URI: {track.uri[:50]}...\n"
+                )
+                if i >= 4:  # Show first 5 tracks
+                    queue_items.append(f"... and {len(player.queue) - 5} more tracks")
+                    break
+            
+            embed.add_field(
+                name=f"Queue ({player.queue.count} tracks)",
+                value="\n".join(queue_items),
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name="testqueue")
+    async def test_queue(self, ctx):
+        """Test queue with duplicate songs (admin only)"""
+        if not await self.bot.is_owner(ctx.author):
+            return await ctx.send("❌ This command is for bot owners only")
+        
+        player = await self.connect_player(ctx)
+        if not player:
+            return
+        
+        # Add the same song 3 times
+        test_query = "test song"
+        
+        for i in range(3):
+            try:
+                tracks = await wavelink.Playable.search(f"scsearch:{test_query}")
+                if tracks:
+                    track = tracks[0]
+                    track.requester = ctx.author
+                    track.requested_at = datetime.now(timezone.utc)
+                    
+                    if not player.playing:
+                        await player.play(track)
+                        await ctx.send(f"🎵 Playing: {track.title}")
+                    else:
+                        await player.queue.put_wait(track)
+                        await ctx.send(f"📝 Queued #{player.queue.count}: {track.title}")
+                    
+                    logger.info(f"Test queue - Added track {i+1}: {track.title} (URI: {track.uri})")
+                else:
+                    await ctx.send(f"❌ No results for test query {i+1}")
+            except Exception as e:
+                await ctx.send(f"❌ Error adding track {i+1}: {e}")
+                logger.error(f"Test queue error {i+1}: {e}")
+        
+        await ctx.send(f"✅ Test complete. Queue size: {player.queue.count}")
     
     @commands.command(name="pause")
     async def pause(self, ctx):
@@ -1043,8 +1133,10 @@ class Music(commands.Cog):
         # Play next track
         if not player.queue.is_empty:
             try:
+                logger.info(f"Queue before getting next track: {player.queue.count} tracks")
                 next_track = await player.queue.get_wait()
-                logger.info(f"Playing next track from queue: {next_track.title}")
+                logger.info(f"Got next track from queue: {next_track.title} (Source: {next_track.source})")
+                logger.info(f"Queue after getting next track: {player.queue.count} tracks")
                 
                 # Handle YouTube fallback for queued tracks
                 if next_track.source == "youtube":
