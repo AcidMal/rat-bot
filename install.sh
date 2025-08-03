@@ -1,83 +1,177 @@
 #!/bin/bash
 
-# Rat Bot Auto-Installation Script
-# This script will install all dependencies and set up the bot
+# RatBot Installation Script
+# This script installs all dependencies and sets up the bot
 
-echo "🤖 Rat Bot Installation Script"
+set -e
+
+echo "🐀 RatBot Installation Script"
 echo "=============================="
 
-# Check if Python is installed
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is not installed. Please install Python 3.8 or higher first."
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Check if Python 3.8+ is installed
+print_status "Checking Python version..."
+if command -v python3 &> /dev/null; then
+    PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+    print_success "Python $PYTHON_VERSION found"
+else
+    print_error "Python 3.8+ is required but not installed. Please install Python 3.8 or higher."
     exit 1
 fi
 
-# Check Python version
-PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-echo "✅ Python $PYTHON_VERSION detected"
+# Check if pip is installed
+print_status "Checking pip..."
+if command -v pip3 &> /dev/null; then
+    print_success "pip3 found"
+else
+    print_error "pip3 is required but not installed. Please install pip."
+    exit 1
+fi
+
+# Check if Java is installed (for Lavalink)
+print_status "Checking Java..."
+if command -v java &> /dev/null; then
+    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2)
+    print_success "Java $JAVA_VERSION found"
+else
+    print_warning "Java not found. Lavalink will not work without Java 11+."
+    print_status "Please install Java 11 or higher to use music features."
+fi
 
 # Create virtual environment
-echo "📦 Creating virtual environment..."
-python3 -m venv venv
+print_status "Creating virtual environment..."
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
+    print_success "Virtual environment created"
+else
+    print_status "Virtual environment already exists"
+fi
 
 # Activate virtual environment
-echo "🔧 Activating virtual environment..."
+print_status "Activating virtual environment..."
 source venv/bin/activate
 
 # Upgrade pip
-echo "⬆️ Upgrading pip..."
+print_status "Upgrading pip..."
 pip install --upgrade pip
 
 # Install Python dependencies
-echo "📥 Installing Python dependencies..."
+print_status "Installing Python dependencies..."
 pip install -r requirements.txt
+print_success "Python dependencies installed"
 
-# Check if .env file exists
+# Download Lavalink if Java is available
+if command -v java &> /dev/null; then
+    print_status "Checking Lavalink..."
+    if [ ! -f "Lavalink.jar" ]; then
+        print_status "Downloading Lavalink..."
+        LAVALINK_VERSION="4.0.0"
+        LAVALINK_URL="https://github.com/lavalink-devs/Lavalink/releases/download/$LAVALINK_VERSION/Lavalink.jar"
+        
+        if command -v curl &> /dev/null; then
+            curl -L -o Lavalink.jar "$LAVALINK_URL"
+        elif command -v wget &> /dev/null; then
+            wget -O Lavalink.jar "$LAVALINK_URL"
+        else
+            print_error "Neither curl nor wget found. Please install one of them or download Lavalink.jar manually."
+            print_status "Download Lavalink from: https://github.com/lavalink-devs/Lavalink/releases"
+        fi
+        
+        if [ -f "Lavalink.jar" ]; then
+            print_success "Lavalink downloaded successfully"
+        fi
+    else
+        print_success "Lavalink.jar already exists"
+    fi
+else
+    print_warning "Java not found. Skipping Lavalink download."
+    print_status "Please install Java 11+ and run this script again to download Lavalink."
+fi
+
+# Create necessary directories
+print_status "Creating directories..."
+mkdir -p logs
+mkdir -p data
+print_success "Directories created"
+
+# Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
-    echo "📝 Creating .env file..."
-    cat > .env << 'EOF'
+    print_status "Creating .env file..."
+    cat > .env << EOF
 # Discord Bot Configuration
 DISCORD_TOKEN=your_discord_token_here
-DISCORD_PREFIX=!
+GUILD_ID=your_guild_id_here
 
 # Database Configuration
-DATABASE_PATH=data/bot.db
+DATABASE_URL=postgresql://user:password@localhost/ratbot
+
+# Lavalink Configuration
+LAVALINK_HOST=localhost
+LAVALINK_PORT=2333
+LAVALINK_PASSWORD=youshallnotpass
+
+# Bot Configuration
+PREFIX=!
+EMBED_COLOR=0x00ff00
 
 # Logging Configuration
 LOG_LEVEL=INFO
+
+# ModLog Configuration
+MODLOG_CHANNEL_ID=your_modlog_channel_id_here
 EOF
-    echo "⚠️ Please edit .env file and add your Discord bot token!"
+    print_success ".env file created"
+    print_warning "Please edit .env file with your actual configuration values"
+else
+    print_status ".env file already exists"
 fi
 
-# Create data directory
-echo "📁 Creating data directory..."
-mkdir -p data
+# Make scripts executable
+print_status "Making scripts executable..."
+chmod +x install.sh
+chmod +x update.sh
+chmod +x start.sh
+chmod +x stop.sh
+print_success "Scripts made executable"
 
-# Check if FFmpeg is installed
-if ! command -v ffmpeg &> /dev/null; then
-    echo "⚠️ FFmpeg is not installed. Music functionality may not work properly."
-    echo "📥 To install FFmpeg:"
-    echo "   Ubuntu/Debian: sudo apt install ffmpeg"
-    echo "   macOS: brew install ffmpeg"
-    echo "   Windows: Download from https://ffmpeg.org/download.html"
-fi
+# Database setup instructions
+print_status "Database setup instructions:"
+echo "1. Install PostgreSQL if not already installed"
+echo "2. Create a database named 'ratbot'"
+echo "3. Update the DATABASE_URL in .env file"
+echo "4. The bot will create the necessary tables automatically"
 
-# Install LavaLink
-echo "🎵 Installing LavaLink server..."
-chmod +x install_lavalink.sh
-./install_lavalink.sh
-
+# Final instructions
+print_success "Installation completed!"
 echo ""
-echo "✅ Installation complete!"
+echo "Next steps:"
+echo "1. Edit .env file with your Discord bot token and other settings"
+echo "2. Set up PostgreSQL database"
+echo "3. Run './start.sh' to start the bot"
+echo "4. Use './stop.sh' to stop the bot"
+echo "5. Use './update.sh' to update the bot from GitHub"
 echo ""
-echo "🎵 To start the bot:"
-echo "   source venv/bin/activate"
-echo "   python bot.py"
-echo ""
-echo "🎵 To start LavaLink server (in a separate terminal):"
-echo "   ./start_lavalink.sh"
-echo ""
-echo "📝 Don't forget to:"
-echo "   1. Edit .env file with your Discord bot token"
-echo "   2. Start LavaLink server before running the bot"
-echo "   3. Make sure Java 11+ is installed for LavaLink" 
+echo "For help, check the README.md file or run './start.sh --help'" 

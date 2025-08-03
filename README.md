@@ -1,272 +1,228 @@
-# Rat Bot 🤖
+# 🐀 RatBot - Discord Music & Moderation Bot
 
-A feature-rich Discord bot built with Discord.py, featuring moderation tools, music playback, custom commands, and more!
+A feature-rich Discord bot built with Discord.py that includes music playback, moderation tools, and comprehensive logging.
 
 ## ✨ Features
 
-- **Moderation System** - Kick, ban, mute, warn users with logging
-- **Music System** - High-quality audio playback using LavaLink
-- **Custom Commands** - Server-specific custom commands
-- **User Statistics** - Track user activity and engagement
-- **Server Settings** - Configurable welcome messages, auto-roles, and more
-- **Hybrid Commands** - Both slash commands and legacy prefix commands
-- **Sharding Support** - Handle large numbers of servers efficiently
-- **Database Integration** - Persistent data storage with SQLite
-- **Auto-Installation** - Easy setup scripts for all platforms
-- **Auto-LavaLink** - LavaLink server starts automatically with the bot
+### 🎵 Music Features
+- **YouTube, SoundCloud, and more** - Play music from various sources
+- **Queue management** - Add, remove, and manage your music queue
+- **Volume control** - Adjust playback volume
+- **Playback controls** - Play, pause, resume, skip, and stop
+- **Lavalink integration** - High-quality audio processing
 
-## 🎵 Music System
+### 🛡️ Moderation Features
+- **User management** - Kick, ban, unban, timeout users
+- **Warning system** - Issue warnings to users
+- **Message clearing** - Bulk delete messages
+- **Comprehensive logging** - All actions logged to database and Discord channels
 
-The bot uses **LavaLink** for high-quality audio processing:
-
-### **Why LavaLink?**
-- ✅ **Better Performance** - Dedicated audio server handles all processing
-- ✅ **No SSL Issues** - LavaLink handles YouTube API changes automatically
-- ✅ **Multiple Sources** - YouTube, SoundCloud, Bandcamp, Twitch, Vimeo
-- ✅ **Higher Quality** - Better audio quality and stability
-- ✅ **No Authentication** - No sign-in prompts or certificate issues
-- ✅ **Auto-Start** - LavaLink server starts automatically with the bot
-
-### **Music Commands**
-| Command | Description |
-|---------|-------------|
-| `/join` | Join a voice channel |
-| `/play <song>` | Play a song (URL or search) |
-| `/pause` | Pause current song |
-| `/resume` | Resume paused song |
-| `/skip` | Skip current song |
-| `/stop` | Stop and clear queue |
-| `/queue` | Show music queue |
-| `/now` | Show currently playing |
-| `/volume <0-100>` | Set volume |
-| `/shuffle` | Shuffle queue |
-| `/clear` | Clear queue |
-| `/remove <position>` | Remove track from queue |
-| `/leave` | Leave voice channel |
-| `/lavalink` | Check LavaLink server status |
+### 📊 General Features
+- **Server information** - Detailed server stats and info
+- **User information** - User profiles and statistics
+- **System monitoring** - Bot performance and system stats
+- **Customizable prefix** - Change bot command prefix
+- **Embedded responses** - Beautiful, formatted responses
 
 ## 🚀 Quick Start
 
-### **Prerequisites**
+### Prerequisites
 - Python 3.8 or higher
-- Java 11 or higher (for LavaLink)
-- FFmpeg (optional, for additional audio formats)
+- Java 11 or higher (for Lavalink)
+- PostgreSQL database
+- Discord Bot Token
 
-### **Installation**
+### Installation
 
-#### **Linux/macOS:**
-```bash
-# Clone the repository
-git clone <repository-url>
-cd rat-bot
-
-# Run installation script
-chmod +x install.sh
-./install.sh
-```
-
-#### **Windows:**
-```cmd
-# Clone the repository
-git clone <repository-url>
-cd rat-bot
-
-# Run installation script
-install.bat
-```
-
-### **Setup**
-
-1. **Edit `.env` file** with your Discord bot token:
-   ```env
-   DISCORD_TOKEN=your_discord_token_here
-   DISCORD_PREFIX=!
-   ```
-
-2. **Start the bot** (LavaLink starts automatically):
+1. **Clone the repository**
    ```bash
-   # Linux/macOS
-   ./run.sh
-   
-   # Windows
-   run.bat
+   git clone <your-repo-url>
+   cd rat-bot
    ```
 
-That's it! The bot will automatically start the LavaLink server when it connects to Discord.
-
-## 📋 Manual Installation
-
-If you prefer manual installation:
-
-1. **Install Python dependencies:**
+2. **Run the installation script**
    ```bash
-   pip install -r requirements.txt
+   chmod +x install.sh
+   ./install.sh
    ```
 
-2. **Install LavaLink:**
+3. **Configure the bot**
+   - Edit the `.env` file with your settings
+   - Set up your PostgreSQL database
+   - Add your Discord bot token
+
+4. **Start the bot**
    ```bash
-   # Linux/macOS
-   ./install_lavalink.sh
-   
-   # Windows
-   install_lavalink.bat
+   ./start.sh
    ```
 
-3. **Configure and run the bot:**
-   ```bash
-   # Edit .env file with your token
-   python bot.py
-   ```
+## 📋 Configuration
 
-## 🎵 LavaLink Configuration
+### Environment Variables (.env file)
 
-The bot automatically connects to LavaLink with these settings:
-- **Host:** 127.0.0.1
-- **Port:** 2333
-- **Password:** youshallnotpass
-
-### **LavaLink Features:**
-- **YouTube Search** - Search and play YouTube videos
-- **Multiple Sources** - Support for various audio platforms
-- **High Quality** - Better audio processing than direct downloads
-- **No Authentication** - No SSL certificate or login issues
-- **Auto-Reconnect** - Automatic reconnection on disconnection
-- **Auto-Start** - Server starts automatically with the bot
-
-## 🔧 Configuration
-
-### **Environment Variables (.env)**
 ```env
 # Discord Bot Configuration
 DISCORD_TOKEN=your_discord_token_here
-DISCORD_PREFIX=!
+GUILD_ID=your_guild_id_here
 
 # Database Configuration
-DATABASE_PATH=data/bot.db
+DATABASE_URL=postgresql://user:password@localhost/ratbot
+
+# Lavalink Configuration
+LAVALINK_HOST=localhost
+LAVALINK_PORT=2333
+LAVALINK_PASSWORD=youshallnotpass
+
+# Bot Configuration
+PREFIX=!
+EMBED_COLOR=0x00ff00
 
 # Logging Configuration
 LOG_LEVEL=INFO
+
+# ModLog Configuration
+MODLOG_CHANNEL_ID=your_modlog_channel_id_here
 ```
 
-### **Bot Permissions**
-The bot needs these permissions:
-- **Send Messages**
-- **Use Slash Commands**
-- **Connect** (for voice)
-- **Speak** (for voice)
-- **Manage Messages** (for moderation)
-- **Kick Members** (for moderation)
-- **Ban Members** (for moderation)
+### Database Setup
+
+1. Install PostgreSQL
+2. Create a database named `ratbot`
+3. Update the `DATABASE_URL` in your `.env` file
+4. The bot will automatically create the necessary tables
+
+## 🎮 Commands
+
+### Music Commands
+- `!join` / `!j` - Join a voice channel
+- `!play <query>` / `!p <query>` - Play a song
+- `!pause` - Pause the current track
+- `!resume` - Resume the current track
+- `!stop` - Stop playing and clear queue
+- `!skip` / `!s` - Skip the current track
+- `!queue` / `!q` - Show the current queue
+- `!volume <0-100>` / `!vol <0-100>` - Set volume
+- `!leave` / `!dc` - Leave the voice channel
+
+### Moderation Commands
+- `!kick <user> [reason]` - Kick a user
+- `!ban <user> [reason]` - Ban a user
+- `!unban <user_id> [reason]` - Unban a user
+- `!timeout <user> <duration> [reason]` - Timeout a user
+- `!warn <user> [reason]` - Warn a user
+- `!modlogs [user] [limit]` - Show moderation logs
+- `!clear <amount>` - Clear messages
+
+### General Commands
+- `!ping` - Check bot latency
+- `!info` - Show bot information
+- `!serverinfo` / `!server` - Show server information
+- `!userinfo [user]` / `!user [user]` - Show user information
+- `!avatar [user]` / `!av [user]` - Show user avatar
+- `!invite` - Get bot invite link
+- `!help [command]` - Show help information
+
+## 🛠️ Management Scripts
+
+### Installation
+```bash
+./install.sh
+```
+Installs all dependencies, downloads Lavalink, and sets up the environment.
+
+### Starting the Bot
+```bash
+./start.sh              # Start normally
+./start.sh -d           # Start in background
+./start.sh -v           # Start with verbose logging
+./start.sh --no-lavalink # Start without Lavalink
+```
+
+### Stopping the Bot
+```bash
+./stop.sh
+```
+Safely stops the bot and Lavalink server.
+
+### Updating the Bot
+```bash
+./update.sh
+```
+Updates the bot from GitHub and updates dependencies.
 
 ## 📁 Project Structure
 
 ```
 rat-bot/
-├── bot.py                 # Main bot file
+├── main.py                 # Main bot file
 ├── config.py              # Configuration settings
 ├── requirements.txt       # Python dependencies
+├── application.yml        # Lavalink configuration
+├── install.sh            # Installation script
+├── start.sh              # Start script
+├── stop.sh               # Stop script
+├── update.sh             # Update script
 ├── .env                  # Environment variables
 ├── cogs/                 # Bot cogs (modules)
-│   ├── admin.py         # Admin commands
-│   ├── moderation.py    # Moderation commands
-│   ├── music.py         # Music commands (LavaLink)
-│   ├── fun.py           # Fun commands
-│   └── utility.py       # Utility commands
-├── data/                 # Database and data files
-├── lavalink/            # LavaLink server files
-│   ├── Lavalink.jar     # LavaLink server
-│   └── application.yml  # LavaLink configuration
-├── install.sh           # Linux/macOS installation
-├── install.bat          # Windows installation
-├── install_lavalink.sh  # LavaLink installation (Linux/macOS)
-├── install_lavalink.bat # LavaLink installation (Windows)
-├── run.sh               # Run bot (Linux/macOS)
-├── run.bat              # Run bot (Windows)
-├── update.py            # Update script
-├── update.sh            # Update script (Linux/macOS)
-├── update.bat           # Update script (Windows)
-└── README.md            # This file
+│   ├── general.py        # General commands
+│   ├── music.py          # Music commands
+│   └── moderation.py     # Moderation commands
+├── database/             # Database models
+│   └── models.py         # Database class
+├── logs/                 # Log files
+└── data/                 # Data files
 ```
 
-## 🎵 Music System Details
+## 🔧 Development
 
-### **LavaLink Integration**
-The bot uses LavaLink for all audio processing, which provides:
-- **Better Performance** - Dedicated audio server
-- **No SSL Issues** - Handles YouTube API changes automatically
-- **Multiple Sources** - YouTube, SoundCloud, Bandcamp, Twitch, Vimeo
-- **Higher Quality** - Better audio processing than direct downloads
-- **Auto-Reconnect** - Automatic reconnection on disconnection
-- **Auto-Start** - Server starts automatically with the bot
+### Adding New Commands
+1. Create a new cog in the `cogs/` directory
+2. Add the cog to the `load_cogs()` method in `main.py`
+3. Follow the existing cog structure
 
-### **Install Java**
-LavaLink requires Java 11 or higher:
+### Database Schema
+The bot automatically creates these tables:
+- `modlogs` - Moderation action logs
+- `guild_settings` - Per-guild settings
+- `music_queues` - Music queue data
 
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt update
-sudo apt install openjdk-11-jdk
-```
+### Logging
+- Bot logs: `logs/bot.log`
+- Lavalink logs: `logs/lavalink.log`
+- Log level can be set in `.env` file
 
-**macOS:**
-```bash
-brew install openjdk@11
-```
+## 🐛 Troubleshooting
 
-**Windows:**
-Download from [Adoptium](https://adoptium.net/)
+### Common Issues
 
-### **LavaLink Server**
-The LavaLink server runs automatically when the bot starts and handles all audio processing. The bot connects to it via WebSocket.
+**Bot won't start**
+- Check your `.env` file configuration
+- Ensure PostgreSQL is running
+- Verify your Discord token is correct
 
-## 🔄 Update System
+**Music not working**
+- Make sure Java 11+ is installed
+- Check if Lavalink.jar exists
+- Verify Lavalink is running (check logs/lavalink.log)
 
-### **Automatic Updates**
-```bash
-# Linux/macOS
-./update.sh
+**Database connection failed**
+- Ensure PostgreSQL is installed and running
+- Check your DATABASE_URL in `.env`
+- Verify the database exists
 
-# Windows
-update.bat
-```
+**Permission errors**
+- Check bot permissions in Discord
+- Ensure bot has required roles
+- Verify channel permissions
 
-### **Manual Updates**
-```bash
-# Update dependencies
-pip install -r requirements.txt
+### Getting Help
+1. Check the logs in the `logs/` directory
+2. Run with verbose logging: `./start.sh -v`
+3. Check the bot's status with `!ping` and `!info`
 
-# Update LavaLink (if needed)
-cd lavalink
-wget -O Lavalink.jar https://github.com/lavalink-devs/Lavalink/releases/download/4.0.0/Lavalink.jar
-```
+## 📄 License
 
-## 🛠️ Troubleshooting
-
-### **Common Issues**
-
-#### **LavaLink Connection Issues**
-- **Problem:** Bot can't connect to LavaLink
-- **Solution:** Make sure Java 11+ is installed (`java -version`)
-- **Solution:** Check if LavaLink is installed (`ls lavalink/`)
-
-#### **Music Not Playing**
-- **Problem:** Music commands don't work
-- **Solution:** Check bot has voice permissions
-- **Solution:** Verify FFmpeg is installed (optional)
-- **Solution:** Use `/lavalink` command to check server status
-
-#### **Java Issues**
-- **Problem:** LavaLink won't start
-- **Solution:** Install Java 11 or higher
-- **Solution:** Check Java version (`java -version`)
-
-#### **Bot Permissions**
-- **Problem:** Bot can't join voice channels
-- **Solution:** Give bot "Connect" and "Speak" permissions
-- **Solution:** Check bot role hierarchy
-
-### **Logs**
-Check the console output for error messages. The bot will show connection status and any issues.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🤝 Contributing
 
@@ -276,17 +232,13 @@ Check the console output for error messages. The bot will show connection status
 4. Test thoroughly
 5. Submit a pull request
 
-## 📄 License
+## 📞 Support
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- **Discord.py** - The Discord API wrapper
-- **LavaLink** - The audio server
-- **SQLite** - Database engine
-- **FFmpeg** - Audio processing
+For support and questions:
+- Create an issue on GitHub
+- Check the logs for error messages
+- Verify your configuration is correct
 
 ---
 
-**🎵 Enjoy your music bot with auto-starting LavaLink!** 
+**Made with ❤️ using Discord.py and Lavalink** 
