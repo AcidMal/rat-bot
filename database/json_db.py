@@ -198,6 +198,116 @@ class JSONDatabase(DatabaseInterface):
         
         return []
     
+    async def add_to_queue(self, guild_id: int, track_data: Dict[str, Any]) -> int:
+        """Add a track to the queue and return its position"""
+        async with self._lock:
+            guild_id_str = str(guild_id)
+            
+            if guild_id_str not in self.data["music_queues"]:
+                self.data["music_queues"][guild_id_str] = {
+                    "guild_id": guild_id,
+                    "queue": [],
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            
+            queue = self.data["music_queues"][guild_id_str]["queue"]
+            
+            # Add position and timestamp
+            track_data.update({
+                "position": len(queue) + 1,
+                "added_at": datetime.now(timezone.utc).isoformat()
+            })
+            
+            queue.append(track_data)
+            self.data["music_queues"][guild_id_str]["updated_at"] = datetime.now(timezone.utc)
+            
+            await self._save_data()
+            return len(queue)
+    
+    async def get_next_in_queue(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get the next track in queue and remove it"""
+        async with self._lock:
+            guild_id_str = str(guild_id)
+            
+            if guild_id_str not in self.data["music_queues"]:
+                return None
+            
+            queue = self.data["music_queues"][guild_id_str]["queue"]
+            
+            if not queue:
+                return None
+            
+            # Get the first track
+            next_track = queue.pop(0)
+            
+            # Reorder remaining tracks
+            for i, track in enumerate(queue):
+                track["position"] = i + 1
+            
+            self.data["music_queues"][guild_id_str]["updated_at"] = datetime.now(timezone.utc)
+            await self._save_data()
+            
+            return next_track
+    
+    async def get_queue_size(self, guild_id: int) -> int:
+        """Get the current queue size"""
+        guild_id_str = str(guild_id)
+        
+        if guild_id_str not in self.data["music_queues"]:
+            return 0
+        
+        return len(self.data["music_queues"][guild_id_str]["queue"])
+    
+    async def clear_queue(self, guild_id: int) -> int:
+        """Clear the entire queue and return number of tracks removed"""
+        async with self._lock:
+            guild_id_str = str(guild_id)
+            
+            if guild_id_str not in self.data["music_queues"]:
+                return 0
+            
+            queue_size = len(self.data["music_queues"][guild_id_str]["queue"])
+            self.data["music_queues"][guild_id_str]["queue"] = []
+            self.data["music_queues"][guild_id_str]["updated_at"] = datetime.now(timezone.utc)
+            
+            await self._save_data()
+            return queue_size
+    
+    async def remove_from_queue(self, guild_id: int, position: int) -> bool:
+        """Remove a track at specific position from queue"""
+        async with self._lock:
+            guild_id_str = str(guild_id)
+            
+            if guild_id_str not in self.data["music_queues"]:
+                return False
+            
+            queue = self.data["music_queues"][guild_id_str]["queue"]
+            
+            if position < 1 or position > len(queue):
+                return False
+            
+            # Remove track at position (1-indexed)
+            queue.pop(position - 1)
+            
+            # Reorder remaining tracks
+            for i, track in enumerate(queue):
+                track["position"] = i + 1
+            
+            self.data["music_queues"][guild_id_str]["updated_at"] = datetime.now(timezone.utc)
+            await self._save_data()
+            
+            return True
+    
+    async def get_queue_preview(self, guild_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get a preview of the queue without removing tracks"""
+        guild_id_str = str(guild_id)
+        
+        if guild_id_str not in self.data["music_queues"]:
+            return []
+        
+        queue = self.data["music_queues"][guild_id_str]["queue"]
+        return queue[:limit]
+    
     async def set_user_data(self, user_id: int, data: Dict[str, Any]) -> None:
         """Set user data"""
         data["user_id"] = user_id

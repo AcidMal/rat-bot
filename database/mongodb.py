@@ -175,6 +175,118 @@ class MongoDatabase(DatabaseInterface):
             return result["queue"]
         return []
     
+    async def add_to_queue(self, guild_id: int, track_data: Dict[str, Any]) -> int:
+        """Add a track to the queue and return its position"""
+        # Get current queue size
+        result = await self.db.music_queues.find_one({"guild_id": guild_id})
+        current_size = len(result.get("queue", [])) if result else 0
+        
+        # Add position and timestamp
+        track_data.update({
+            "position": current_size + 1,
+            "added_at": datetime.now(timezone.utc)
+        })
+        
+        # Add to queue
+        await self.db.music_queues.update_one(
+            {"guild_id": guild_id},
+            {
+                "$push": {"queue": track_data},
+                "$set": {"updated_at": datetime.now(timezone.utc)}
+            },
+            upsert=True
+        )
+        
+        return current_size + 1
+    
+    async def get_next_in_queue(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get the next track in queue and remove it"""
+        # First get the current queue to find the first track
+        result = await self.db.music_queues.find_one({"guild_id": guild_id})
+        if not result or not result.get("queue"):
+            return None
+        
+        queue = result["queue"]
+        if not queue:
+            return None
+        
+        # Get the first track
+        next_track = queue[0]
+        
+        # Remove the first track and reorder positions
+        new_queue = queue[1:]  # Remove first element
+        for i, track in enumerate(new_queue):
+            track["position"] = i + 1
+        
+        # Update the database
+        await self.db.music_queues.update_one(
+            {"guild_id": guild_id},
+            {
+                "$set": {
+                    "queue": new_queue,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+        
+        return next_track
+    
+    async def get_queue_size(self, guild_id: int) -> int:
+        """Get the current queue size"""
+        result = await self.db.music_queues.find_one({"guild_id": guild_id})
+        if result and "queue" in result:
+            return len(result["queue"])
+        return 0
+    
+    async def clear_queue(self, guild_id: int) -> int:
+        """Clear the entire queue and return number of tracks removed"""
+        result = await self.db.music_queues.find_one({"guild_id": guild_id})
+        queue_size = len(result.get("queue", [])) if result else 0
+        
+        await self.db.music_queues.update_one(
+            {"guild_id": guild_id},
+            {
+                "$set": {
+                    "queue": [],
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            },
+            upsert=True
+        )
+        
+        return queue_size
+    
+    async def remove_from_queue(self, guild_id: int, position: int) -> bool:
+        """Remove a track at specific position from queue"""
+        result = await self.db.music_queues.find_one({"guild_id": guild_id})
+        if not result or not result.get("queue"):
+            return False
+        
+        queue = result["queue"]
+        if position < 1 or position > len(queue):
+            return False
+        
+        # Remove track at position (1-indexed)
+        queue.pop(position - 1)
+        
+        # Reorder remaining tracks
+        for i, track in enumerate(queue):
+            track["position"] = i + 1
+        
+        await self.db.music_queues.update_one(
+            {"guild_id": guild_id},
+            {"$set": {"queue": queue, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        return True
+    
+    async def get_queue_preview(self, guild_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get a preview of the queue without removing tracks"""
+        result = await self.db.music_queues.find_one({"guild_id": guild_id})
+        if result and "queue" in result:
+            return result["queue"][:limit]
+        return []
+    
     async def set_user_data(self, user_id: int, data: Dict[str, Any]) -> None:
         """Set user data"""
         data["user_id"] = user_id

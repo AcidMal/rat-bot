@@ -51,6 +51,36 @@ class DatabaseInterface(ABC):
         pass
     
     @abstractmethod
+    async def add_to_queue(self, guild_id: int, track_data: Dict[str, Any]) -> int:
+        """Add a track to the queue and return its position"""
+        pass
+    
+    @abstractmethod
+    async def get_next_in_queue(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get the next track in queue and remove it"""
+        pass
+    
+    @abstractmethod
+    async def get_queue_size(self, guild_id: int) -> int:
+        """Get the current queue size"""
+        pass
+    
+    @abstractmethod
+    async def clear_queue(self, guild_id: int) -> int:
+        """Clear the entire queue and return number of tracks removed"""
+        pass
+    
+    @abstractmethod
+    async def remove_from_queue(self, guild_id: int, position: int) -> bool:
+        """Remove a track at specific position from queue"""
+        pass
+    
+    @abstractmethod
+    async def get_queue_preview(self, guild_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get a preview of the queue without removing tracks"""
+        pass
+    
+    @abstractmethod
     async def set_user_data(self, user_id: int, data: Dict[str, Any]) -> None:
         """Set user data"""
         pass
