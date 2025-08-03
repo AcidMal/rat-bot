@@ -97,46 +97,81 @@ fi
 print_status "Updating system dependencies..."
 if command -v apt-get &> /dev/null; then
     # Ubuntu/Debian
-    print_status "Updating yarl from system packages..."
+    print_status "Updating dependencies from system packages..."
     sudo apt-get update
-    sudo apt-get install -y python3-yarl
+    sudo apt-get install -y python3-yarl python3-aiohttp python3-asyncpg python3-dotenv python3-colorama python3-psutil
     print_success "System dependencies updated"
 elif command -v dnf &> /dev/null; then
     # Fedora/RHEL
-    print_status "Updating yarl from system packages..."
-    sudo dnf install -y python3-yarl
+    print_status "Updating dependencies from system packages..."
+    sudo dnf install -y python3-yarl python3-aiohttp python3-asyncpg python3-dotenv python3-colorama python3-psutil
     print_success "System dependencies updated"
 elif command -v pacman &> /dev/null; then
     # Arch Linux
-    print_status "Updating yarl from system packages..."
-    sudo pacman -S --noconfirm python-yarl
+    print_status "Updating dependencies from system packages..."
+    sudo pacman -S --noconfirm python-yarl python-aiohttp python-asyncpg python-dotenv python-colorama python-psutil
     print_success "System dependencies updated"
 else
     print_warning "Could not detect package manager, will try pip installation"
 fi
 
-# Update Python dependencies
-print_status "Updating Python dependencies..."
+# Update Python-only dependencies (discord.py and wavelink)
+print_status "Updating Python-only dependencies..."
 pip install --upgrade pip
 
-# Create a temporary requirements file without yarl
-print_status "Creating temporary requirements file..."
-grep -v "yarl" requirements.txt > requirements_temp.txt
+# Create a minimal requirements file with only pip packages
+print_status "Creating minimal requirements file..."
+cat > requirements_minimal.txt << EOF
+discord.py==2.3.2
+wavelink==2.6.4
+EOF
 
 # Install dependencies
-pip install -r requirements_temp.txt
-print_success "Dependencies updated"
+pip install -r requirements_minimal.txt
+print_success "Python-only dependencies updated"
 
 # Clean up temporary file
-rm -f requirements_temp.txt
+rm -f requirements_minimal.txt
 
-# Verify yarl installation
-print_status "Verifying yarl installation..."
-if python3 -c "import yarl; print('yarl version:', yarl.__version__)" 2>/dev/null; then
+# Verify all installations
+print_status "Verifying installations..."
+
+# Check yarl
+if python3 -c "import yarl; print('✅ yarl version:', yarl.__version__)" 2>/dev/null; then
     print_success "yarl is installed and working"
 else
     print_warning "yarl not found, attempting pip installation as fallback..."
     pip install --no-cache-dir yarl==1.9.2 || print_warning "yarl installation failed, but continuing..."
+fi
+
+# Check aiohttp
+if python3 -c "import aiohttp; print('✅ aiohttp version:', aiohttp.__version__)" 2>/dev/null; then
+    print_success "aiohttp is installed and working"
+else
+    print_warning "aiohttp not found, attempting pip installation as fallback..."
+    pip install --no-cache-dir aiohttp==3.9.1 || print_warning "aiohttp installation failed, but continuing..."
+fi
+
+# Check asyncpg
+if python3 -c "import asyncpg; print('✅ asyncpg is installed')" 2>/dev/null; then
+    print_success "asyncpg is installed and working"
+else
+    print_warning "asyncpg not found, attempting pip installation as fallback..."
+    pip install --no-cache-dir asyncpg==0.29.0 || print_warning "asyncpg installation failed, but continuing..."
+fi
+
+# Check discord.py
+if python3 -c "import discord; print('✅ discord.py version:', discord.__version__)" 2>/dev/null; then
+    print_success "discord.py is installed and working"
+else
+    print_error "discord.py installation failed - this is critical!"
+fi
+
+# Check wavelink
+if python3 -c "import wavelink; print('✅ wavelink is installed')" 2>/dev/null; then
+    print_success "wavelink is installed and working"
+else
+    print_error "wavelink installation failed - this is critical!"
 fi
 
 # Check if Lavalink needs updating

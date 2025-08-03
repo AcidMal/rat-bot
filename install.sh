@@ -82,47 +82,50 @@ pip install --upgrade pip
 print_status "Installing system dependencies..."
 if command -v apt-get &> /dev/null; then
     # Ubuntu/Debian
-    print_status "Installing yarl from system packages..."
+    print_status "Installing dependencies from system packages..."
     sudo apt-get update
-    sudo apt-get install -y python3-yarl python3-dev build-essential libssl-dev libffi-dev
+    sudo apt-get install -y python3-yarl python3-aiohttp python3-asyncpg python3-dotenv python3-colorama python3-psutil python3-dev build-essential libssl-dev libffi-dev
     print_success "System dependencies installed"
 elif command -v dnf &> /dev/null; then
     # Fedora/RHEL
-    print_status "Installing yarl from system packages..."
-    sudo dnf install -y python3-yarl python3-devel openssl-devel libffi-devel
+    print_status "Installing dependencies from system packages..."
+    sudo dnf install -y python3-yarl python3-aiohttp python3-asyncpg python3-dotenv python3-colorama python3-psutil python3-devel openssl-devel libffi-devel
     print_success "System dependencies installed"
 elif command -v pacman &> /dev/null; then
     # Arch Linux
-    print_status "Installing yarl from system packages..."
-    sudo pacman -S --noconfirm python-yarl base-devel
+    print_status "Installing dependencies from system packages..."
+    sudo pacman -S --noconfirm python-yarl python-aiohttp python-asyncpg python-dotenv python-colorama python-psutil base-devel
     print_success "System dependencies installed"
 else
     print_warning "Could not detect package manager, will try pip installation"
 fi
 
-# Install Python dependencies
-print_status "Installing Python dependencies..."
+# Install Python-only dependencies (discord.py and wavelink)
+print_status "Installing Python-only dependencies..."
 print_status "This may take a few minutes..."
 
-# Create a temporary requirements file without yarl
-print_status "Creating temporary requirements file..."
-grep -v "yarl" requirements.txt > requirements_temp.txt
+# Create a minimal requirements file with only pip packages
+print_status "Creating minimal requirements file..."
+cat > requirements_minimal.txt << EOF
+discord.py==2.3.2
+wavelink==2.6.4
+EOF
 
-# Install dependencies with better error handling
-if pip install -r requirements_temp.txt; then
-    print_success "Python dependencies installed"
+# Install Python-only dependencies with better error handling
+if pip install -r requirements_minimal.txt; then
+    print_success "Python-only dependencies installed"
 else
     print_warning "Some packages failed to install with pip, trying alternative method..."
     
     # Try installing with --no-cache-dir and --force-reinstall
-    if pip install --no-cache-dir --force-reinstall -r requirements_temp.txt; then
-        print_success "Python dependencies installed with alternative method"
+    if pip install --no-cache-dir --force-reinstall -r requirements_minimal.txt; then
+        print_success "Python-only dependencies installed with alternative method"
     else
-        print_error "Failed to install Python dependencies"
+        print_error "Failed to install Python-only dependencies"
         print_status "Trying to install packages individually..."
         
-        # Install packages individually (excluding yarl)
-        packages=("discord.py==2.3.2" "wavelink==2.6.4" "aiohttp==3.9.1" "asyncpg==0.29.0" "python-dotenv==1.0.0" "colorama==0.4.6" "psutil==5.9.6")
+        # Install packages individually
+        packages=("discord.py==2.3.2" "wavelink==2.6.4")
         
         for package in "${packages[@]}"; do
             print_status "Installing $package..."
@@ -133,20 +136,52 @@ else
             fi
         done
         
-        print_success "Dependency installation completed"
+        print_success "Python-only dependency installation completed"
     fi
 fi
 
 # Clean up temporary file
-rm -f requirements_temp.txt
+rm -f requirements_minimal.txt
 
-# Verify yarl installation
-print_status "Verifying yarl installation..."
-if python3 -c "import yarl; print('yarl version:', yarl.__version__)" 2>/dev/null; then
+# Verify all installations
+print_status "Verifying installations..."
+
+# Check yarl
+if python3 -c "import yarl; print('✅ yarl version:', yarl.__version__)" 2>/dev/null; then
     print_success "yarl is installed and working"
 else
     print_warning "yarl not found, attempting pip installation as fallback..."
     pip install --no-cache-dir yarl==1.9.2 || print_warning "yarl installation failed, but continuing..."
+fi
+
+# Check aiohttp
+if python3 -c "import aiohttp; print('✅ aiohttp version:', aiohttp.__version__)" 2>/dev/null; then
+    print_success "aiohttp is installed and working"
+else
+    print_warning "aiohttp not found, attempting pip installation as fallback..."
+    pip install --no-cache-dir aiohttp==3.9.1 || print_warning "aiohttp installation failed, but continuing..."
+fi
+
+# Check asyncpg
+if python3 -c "import asyncpg; print('✅ asyncpg is installed')" 2>/dev/null; then
+    print_success "asyncpg is installed and working"
+else
+    print_warning "asyncpg not found, attempting pip installation as fallback..."
+    pip install --no-cache-dir asyncpg==0.29.0 || print_warning "asyncpg installation failed, but continuing..."
+fi
+
+# Check discord.py
+if python3 -c "import discord; print('✅ discord.py version:', discord.__version__)" 2>/dev/null; then
+    print_success "discord.py is installed and working"
+else
+    print_error "discord.py installation failed - this is critical!"
+fi
+
+# Check wavelink
+if python3 -c "import wavelink; print('✅ wavelink is installed')" 2>/dev/null; then
+    print_success "wavelink is installed and working"
+else
+    print_error "wavelink installation failed - this is critical!"
 fi
 
 # Download Lavalink if Java is available
