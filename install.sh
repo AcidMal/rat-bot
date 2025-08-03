@@ -61,6 +61,134 @@ else
     print_status "Please install Java 11 or higher to use music features."
 fi
 
+# Database setup function
+setup_database() {
+    print_status "Setting up PostgreSQL database..."
+    
+    # Install PostgreSQL
+    if command -v apt-get &> /dev/null; then
+        # Ubuntu/Debian
+        print_status "Installing PostgreSQL..."
+        sudo apt-get update
+        sudo apt-get install -y postgresql postgresql-contrib
+        print_success "PostgreSQL installed"
+        
+        # Start and enable PostgreSQL service
+        print_status "Starting PostgreSQL service..."
+        sudo systemctl start postgresql
+        sudo systemctl enable postgresql
+        print_success "PostgreSQL service started and enabled"
+        
+    elif command -v dnf &> /dev/null; then
+        # Fedora/RHEL
+        print_status "Installing PostgreSQL..."
+        sudo dnf install -y postgresql postgresql-server postgresql-contrib
+        print_success "PostgreSQL installed"
+        
+        # Initialize and start PostgreSQL
+        print_status "Initializing PostgreSQL database..."
+        sudo postgresql-setup --initdb
+        sudo systemctl start postgresql
+        sudo systemctl enable postgresql
+        print_success "PostgreSQL service started and enabled"
+        
+    elif command -v pacman &> /dev/null; then
+        # Arch Linux
+        print_status "Installing PostgreSQL..."
+        sudo pacman -S --noconfirm postgresql
+        print_success "PostgreSQL installed"
+        
+        # Initialize and start PostgreSQL
+        print_status "Initializing PostgreSQL database..."
+        sudo -u postgres initdb -D /var/lib/postgres/data
+        sudo systemctl start postgresql
+        sudo systemctl enable postgresql
+        print_success "PostgreSQL service started and enabled"
+        
+    else
+        print_warning "Could not detect package manager for PostgreSQL installation"
+        print_status "Please install PostgreSQL manually and ensure it's running"
+        return 1
+    fi
+    
+    # Create database and user
+    print_status "Creating database and user..."
+    
+    # Generate random password for database user
+    DB_PASSWORD=$(openssl rand -base64 32)
+    
+    # Create database user and database
+    sudo -u postgres psql -c "CREATE USER ratbot WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || print_warning "User ratbot might already exist"
+    sudo -u postgres psql -c "CREATE DATABASE ratbot OWNER ratbot;" 2>/dev/null || print_warning "Database ratbot might already exist"
+    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ratbot TO ratbot;" 2>/dev/null || print_warning "Privileges might already be granted"
+    
+    print_success "Database and user created"
+    
+    # Update .env file with database credentials
+    print_status "Updating .env file with database credentials..."
+    if [ -f ".env" ]; then
+        # Backup existing .env
+        cp .env .env.backup
+        print_status "Backed up existing .env file"
+    fi
+    
+    # Create new .env with database credentials
+    cat > .env << EOF
+# Discord Bot Configuration
+DISCORD_TOKEN=your_discord_token_here
+GUILD_ID=your_guild_id_here
+
+# Database Configuration
+DATABASE_URL=postgresql://ratbot:$DB_PASSWORD@localhost/ratbot
+
+# Lavalink Configuration
+LAVALINK_HOST=localhost
+LAVALINK_PORT=2333
+LAVALINK_PASSWORD=youshallnotpass
+
+# Bot Configuration
+PREFIX=!
+EMBED_COLOR=0x00ff00
+
+# Logging Configuration
+LOG_LEVEL=INFO
+
+# ModLog Configuration
+MODLOG_CHANNEL_ID=your_modlog_channel_id_here
+EOF
+    
+    print_success "Database credentials added to .env file"
+    print_warning "Database password: $DB_PASSWORD (saved in .env file)"
+    
+    # Test database connection
+    print_status "Testing database connection..."
+    if python3 -c "
+import asyncpg
+import asyncio
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+async def test_db():
+    try:
+        conn = await asyncpg.connect(os.getenv('DATABASE_URL'))
+        await conn.close()
+        print('✅ Database connection successful!')
+    except Exception as e:
+        print(f'❌ Database connection failed: {e}')
+        exit(1)
+
+asyncio.run(test_db())
+" 2>/dev/null; then
+        print_success "Database connection test passed"
+    else
+        print_warning "Database connection test failed - you may need to configure PostgreSQL manually"
+    fi
+    
+    return 0
+}
+
 # Create virtual environment
 print_status "Creating virtual environment..."
 if [ ! -d "venv" ]; then
@@ -218,36 +346,13 @@ mkdir -p logs
 mkdir -p data
 print_success "Directories created"
 
-# Create .env file if it doesn't exist
-if [ ! -f ".env" ]; then
-    print_status "Creating .env file..."
-    cat > .env << EOF
-# Discord Bot Configuration
-DISCORD_TOKEN=your_discord_token_here
-GUILD_ID=your_guild_id_here
-
-# Database Configuration
-DATABASE_URL=postgresql://user:password@localhost/ratbot
-
-# Lavalink Configuration
-LAVALINK_HOST=localhost
-LAVALINK_PORT=2333
-LAVALINK_PASSWORD=youshallnotpass
-
-# Bot Configuration
-PREFIX=!
-EMBED_COLOR=0x00ff00
-
-# Logging Configuration
-LOG_LEVEL=INFO
-
-# ModLog Configuration
-MODLOG_CHANNEL_ID=your_modlog_channel_id_here
-EOF
-    print_success ".env file created"
-    print_warning "Please edit .env file with your actual configuration values"
+# Setup database
+print_status "Setting up database..."
+if setup_database; then
+    print_success "Database setup completed"
 else
-    print_status ".env file already exists"
+    print_warning "Database setup failed or skipped"
+    print_status "You may need to set up PostgreSQL manually"
 fi
 
 # Make scripts executable
@@ -257,23 +362,31 @@ chmod +x update.sh
 chmod +x start.sh
 chmod +x stop.sh
 chmod +x troubleshoot.sh
+chmod +x setup_database.sh
+chmod +x install_psutil.sh
 print_success "Scripts made executable"
-
-# Database setup instructions
-print_status "Database setup instructions:"
-echo "1. Install PostgreSQL if not already installed"
-echo "2. Create a database named 'ratbot'"
-echo "3. Update the DATABASE_URL in .env file"
-echo "4. The bot will create the necessary tables automatically"
 
 # Final instructions
 print_success "Installation completed!"
 echo ""
-echo "Next steps:"
+echo "✅ What was set up:"
+echo "   • Python virtual environment with all dependencies"
+echo "   • PostgreSQL database server (if supported)"
+echo "   • Database 'ratbot' with user 'ratbot'"
+echo "   • Lavalink music server (if Java is available)"
+echo "   • Configuration files (.env)"
+echo "   • All management scripts"
+echo ""
+echo "📝 Next steps:"
 echo "1. Edit .env file with your Discord bot token and other settings"
-echo "2. Set up PostgreSQL database"
-echo "3. Run './start.sh' to start the bot"
-echo "4. Use './stop.sh' to stop the bot"
-echo "5. Use './update.sh' to update the bot from GitHub"
+echo "2. Run './start.sh' to start the bot"
+echo "3. Use './stop.sh' to stop the bot"
+echo "4. Use './update.sh' to update the bot from GitHub"
+echo ""
+echo "🔧 Database Info:"
+echo "   • Database: ratbot"
+echo "   • User: ratbot"
+echo "   • Password: (saved in .env file)"
+echo "   • Connection: PostgreSQL will start automatically"
 echo ""
 echo "For help, check the README.md file or run './start.sh --help'" 

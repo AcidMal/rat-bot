@@ -9,17 +9,17 @@ import json
 class MusicPlayer:
     def __init__(self, bot):
         self.bot = bot
-        self.queue: List[wavelink.Track] = []
-        self.current_track: Optional[wavelink.Track] = None
+        self.queue: List[wavelink.Playable] = []
+        self.current_track: Optional[wavelink.Playable] = None
         self.volume = 100
         self.loop_mode = 'none'  # none, single, queue
         self.is_playing = False
     
-    def add_track(self, track: wavelink.Track):
+    def add_track(self, track: wavelink.Playable):
         """Add a track to the queue"""
         self.queue.append(track)
     
-    def get_next_track(self) -> Optional[wavelink.Track]:
+    def get_next_track(self) -> Optional[wavelink.Playable]:
         """Get the next track from queue"""
         if not self.queue:
             return None
@@ -92,7 +92,7 @@ class Music(commands.Cog):
         
         # Search for the track
         try:
-            tracks = await wavelink.YouTubeTrack.search(query)
+            tracks = await wavelink.Playable.search(query)
             if not tracks:
                 embed = discord.Embed(
                     title="❌ Error",

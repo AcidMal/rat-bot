@@ -1,4 +1,4 @@
 # Python-only dependencies (installed via pip)
 # System dependencies (yarl, aiohttp, asyncpg, python-dotenv, colorama, psutil) are installed via system packages
 discord.py==2.3.2
-wavelink==2.6.4 
+wavelink==3.2.0 
