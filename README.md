@@ -10,6 +10,7 @@ A feature-rich, scalable Discord bot built with Python, featuring advanced music
 - **Smart Fallback**: Automatic retry with alternative sources
 - **Multiple Sources**: SoundCloud, Bandcamp, YouTube, Twitch
 - **Dual Search Modes**: Regular (`!play song`) or YouTube (`!play yt:song`)
+- **Cookies Support**: Enhanced YouTube access with browser cookies
 - **Queue Management**: Add, remove, shuffle, and loop tracks
 - **Audio Filters**: Equalizer, bass boost, speed control
 - **Playlist Support**: Import and manage playlists
@@ -197,10 +198,48 @@ wget https://github.com/lavalink-devs/Lavalink/releases/download/4.0.4/Lavalink.
 java -jar Lavalink.jar
 ```
 
+## 🍪 YouTube Cookies Setup (Optional)
+
+For enhanced YouTube access (age-restricted, region-locked content), you can set up browser cookies:
+
+### Quick Setup
+```bash
+# Run the interactive setup utility
+python setup_cookies.py
+
+# Test cookies functionality
+python setup_cookies.py --test
+```
+
+### Manual Setup
+1. **Export cookies from your browser:**
+   - Install "Get cookies.txt LOCALLY" browser extension
+   - Go to youtube.com and log in
+   - Click extension and download cookies.txt
+
+2. **Place cookies file in one of these locations:**
+   - `./cookies.txt` (bot directory) - **Recommended**
+   - `./data/cookies.txt`
+   - `~/cookies.txt` (home directory)
+   - `/rat-bot/cookies.txt` (your specified path)
+
+3. **Restart the bot** - cookies will be automatically detected
+
+### Benefits
+- ✅ Access age-restricted videos
+- ✅ Bypass region restrictions
+- ✅ Better rate limiting
+- ✅ Improved search results
+
+### Usage
+- **Regular search**: `!play song name` (SoundCloud/Bandcamp)
+- **YouTube with cookies**: `!play yt:song name` (enhanced YouTube access)
+
 ## 📝 Commands
 
 ### Music Commands
-- `!play <query>` - Play a song or add to queue
+- `!play <query>` - Play a song or add to queue (SoundCloud/Bandcamp)
+- `!play yt:<query>` - Play from YouTube directly (with cookies support)
 - `!pause` - Pause the current track
 - `!resume` - Resume playback
 - `!skip` - Skip the current track

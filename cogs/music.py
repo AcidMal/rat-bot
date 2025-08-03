@@ -79,6 +79,23 @@ class Music(commands.Cog):
                 'extract_flat': False,
             }
             
+            # Add cookies if available
+            import os
+            cookies_paths = [
+                'cookies.txt',
+                '/rat-bot/cookies.txt',
+                os.path.expanduser('~/cookies.txt'),
+                'data/cookies.txt'
+            ]
+            
+            for cookies_path in cookies_paths:
+                if os.path.exists(cookies_path):
+                    ydl_opts['cookiefile'] = cookies_path
+                    logger.info(f"Using cookies from: {cookies_path}")
+                    break
+            else:
+                logger.warning("No cookies file found. YouTube access may be limited.")
+            
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # Search for the query
                 search_query = f"ytsearch1:{query}"
@@ -723,6 +740,56 @@ class Music(commands.Cog):
         
         await ctx.send(embed=embed)
     
+    @commands.command(name="queuedebug", aliases=["qd"])
+    async def queue_debug(self, ctx):
+        """Debug queue information (admin only)"""
+        if not await self.bot.is_owner(ctx.author):
+            return await ctx.send("❌ This command is for bot owners only")
+            
+        player = self.get_player(ctx.guild)
+        if not player:
+            return await ctx.send("❌ Not connected to a voice channel")
+        
+        embed = discord.Embed(
+            title="🔧 Queue Debug Info",
+            color=0xff9900
+        )
+        
+        embed.add_field(name="Queue Size", value=f"{player.queue.count}", inline=True)
+        embed.add_field(name="Queue Empty", value=f"{player.queue.is_empty}", inline=True)
+        embed.add_field(name="Playing", value=f"{player.playing}", inline=True)
+        embed.add_field(name="Paused", value=f"{player.paused}", inline=True)
+        embed.add_field(name="Loop Mode", value=f"{player.loop_mode}", inline=True)
+        embed.add_field(name="Auto Play", value=f"{player.auto_play}", inline=True)
+        embed.add_field(name="History Count", value=f"{len(player.history)}", inline=True)
+        embed.add_field(name="Tracks Played", value=f"{player.tracks_played}", inline=True)
+        embed.add_field(name="Connected", value=f"{player.connected}", inline=True)
+        
+        if player.current:
+            embed.add_field(
+                name="Current Track",
+                value=f"**{player.current.title}**\n"
+                      f"Source: {player.current.source}\n"
+                      f"Position: {self._format_time(player.position)}/{self._format_time(player.current.length)}",
+                inline=False
+            )
+        
+        if not player.queue.is_empty:
+            next_tracks = []
+            for i, track in enumerate(player.queue):
+                if i >= 3:  # Show next 3 tracks
+                    break
+                next_tracks.append(f"{i+1}. {track.title} ({track.source})")
+            
+            if next_tracks:
+                embed.add_field(
+                    name="Next Tracks",
+                    value="\n".join(next_tracks),
+                    inline=False
+                )
+        
+        await ctx.send(embed=embed)
+    
     @commands.command(name="pause")
     async def pause(self, ctx):
         """Pause the current track"""
@@ -951,6 +1018,10 @@ class Music(commands.Cog):
         if not player:
             return
         
+        logger.info(f"Track ended: {payload.track.title if payload.track else 'Unknown'}")
+        logger.info(f"Queue size: {player.queue.count}")
+        logger.info(f"Loop mode: {player.loop_mode}")
+        
         # Update statistics
         player.tracks_played += 1
         if hasattr(payload.track, 'length'):
@@ -963,6 +1034,7 @@ class Music(commands.Cog):
         
         # Handle loop modes
         if player.loop_mode == "track" and payload.track:
+            logger.info("Looping current track")
             return await player.play(payload.track)
         
         # Clear skip votes
@@ -970,9 +1042,59 @@ class Music(commands.Cog):
         
         # Play next track
         if not player.queue.is_empty:
-            next_track = await player.queue.get_wait()
-            await player.play(next_track)
+            try:
+                next_track = await player.queue.get_wait()
+                logger.info(f"Playing next track from queue: {next_track.title}")
+                
+                # Handle YouTube fallback for queued tracks
+                if next_track.source == "youtube":
+                    try:
+                        await player.play(next_track)
+                        # Check if it actually started playing
+                        await asyncio.sleep(2)
+                        if not player.playing and not player.paused:
+                            logger.warning("Queued YouTube track failed, attempting fallback...")
+                            # Find the channel for fallback
+                            channel = player.channel
+                            if channel and hasattr(channel, 'guild'):
+                                # Create a mock context for fallback
+                                class MockContext:
+                                    def __init__(self, channel, author):
+                                        self.channel = channel
+                                        self.author = author
+                                        self.send = channel.send
+                                
+                                mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
+                                await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
+                                return
+                    except Exception as e:
+                        logger.warning(f"Queued YouTube track failed: {e}, attempting fallback...")
+                        channel = player.channel
+                        if channel and hasattr(channel, 'guild'):
+                            class MockContext:
+                                def __init__(self, channel, author):
+                                    self.channel = channel
+                                    self.author = author
+                                    self.send = channel.send
+                            
+                            mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
+                            await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
+                            return
+                else:
+                    await player.play(next_track)
+                    
+            except Exception as e:
+                logger.error(f"Error playing next track: {e}")
+                # Try to continue with the next track if available
+                if not player.queue.is_empty:
+                    try:
+                        next_track = await player.queue.get_wait()
+                        await player.play(next_track)
+                    except Exception as e2:
+                        logger.error(f"Failed to play backup track: {e2}")
+                        
         elif player.loop_mode == "queue" and player.history:
+            logger.info("Restarting queue loop")
             # Restart queue
             for track in reversed(player.history):
                 await player.queue.put_wait(track)
@@ -980,15 +1102,21 @@ class Music(commands.Cog):
                 next_track = await player.queue.get_wait()
                 await player.play(next_track)
         elif player.auto_play and payload.track:
+            logger.info("Attempting auto-play")
             # Auto-play similar tracks (if supported)
             try:
-                recommended = await wavelink.Playable.search(f"ytsearch:{payload.track.title}")
+                recommended = await wavelink.Playable.search(f"scsearch:{payload.track.title}")
+                if not recommended:
+                    recommended = await wavelink.Playable.search(f"bcsearch:{payload.track.title}")
+                    
                 if recommended and len(recommended) > 1:
                     next_track = recommended[1]  # Skip the same track
                     next_track.requester = payload.track.requester if hasattr(payload.track, 'requester') else None
                     await player.play(next_track)
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Auto-play failed: {e}")
+        else:
+            logger.info("No more tracks to play, queue is empty")
     
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):

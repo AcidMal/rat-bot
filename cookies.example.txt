@@ -1,0 +1,29 @@
+# Netscape HTTP Cookie File
+# This is a generated file! Do not edit.
+
+# Example YouTube cookies file
+# Replace this with your actual cookies exported from your browser
+# 
+# How to get your cookies:
+# 1. Install "Get cookies.txt LOCALLY" browser extension
+# 2. Go to youtube.com and log in to your account
+# 3. Click the extension and download cookies.txt
+# 4. Replace this file with your downloaded cookies.txt
+# 5. Rename to cookies.txt (remove .example)
+#
+# Supported locations:
+# - ./cookies.txt (recommended)
+# - ./data/cookies.txt  
+# - ~/cookies.txt
+# - /rat-bot/cookies.txt
+#
+# Benefits of using cookies:
+# - Access age-restricted videos
+# - Bypass region restrictions  
+# - Better rate limiting
+# - Improved search results
+
+# Your actual cookies will look something like this:
+# .youtube.com	TRUE	/	FALSE	1234567890	VISITOR_INFO1_LIVE	abcdef123456
+# .youtube.com	TRUE	/	TRUE	1234567890	YSC	hijklmn789
+# .youtube.com	TRUE	/	TRUE	1234567890	PREF	f1=50000000

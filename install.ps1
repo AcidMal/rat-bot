@@ -204,5 +204,10 @@ Write-Host "• Regular search: !play song name (uses SoundCloud/Bandcamp)" -For
 Write-Host "• YouTube search: !play yt:song name (direct YouTube via yt-dlp)" -ForegroundColor White
 Write-Host "• Automatic fallback: YouTube failures auto-retry with alternatives" -ForegroundColor White
 Write-Host ""
+Write-Host "🍪 Optional YouTube Enhancement:" -ForegroundColor Yellow
+Write-Host "• For better YouTube access, set up cookies:" -ForegroundColor White
+Write-Host "  python setup_cookies.py" -ForegroundColor Gray
+Write-Host "• This enables age-restricted and region-locked content" -ForegroundColor White
+Write-Host ""
 Write-Host "📖 For help: !help" -ForegroundColor Cyan
 Write-Host ""

@@ -698,6 +698,11 @@ EOF
     echo "• YouTube search: !play yt:song name (direct YouTube)"
     echo "• Automatic fallback: YouTube failures auto-retry"
     echo ""
+    echo -e "${YELLOW}🍪 Optional YouTube Enhancement:${NC}"
+    echo "• For better YouTube access, set up cookies:"
+    echo "  python setup_cookies.py"
+    echo "• This enables age-restricted and region-locked content"
+    echo ""
     echo -e "${CYAN}Your hybrid music bot is ready to run!${NC}"
     echo ""
 }
