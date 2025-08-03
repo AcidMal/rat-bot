@@ -150,6 +150,12 @@ Safely stops the bot and Lavalink server.
 ```
 Updates the bot from GitHub and updates dependencies.
 
+### Troubleshooting
+```bash
+./troubleshoot.sh
+```
+Interactive script to fix common installation and dependency issues.
+
 ## 📁 Project Structure
 
 ```

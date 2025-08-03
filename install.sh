@@ -80,8 +80,36 @@ pip install --upgrade pip
 
 # Install Python dependencies
 print_status "Installing Python dependencies..."
-pip install -r requirements.txt
-print_success "Python dependencies installed"
+print_status "This may take a few minutes..."
+
+# Install dependencies with better error handling
+if pip install -r requirements.txt; then
+    print_success "Python dependencies installed"
+else
+    print_warning "Some packages failed to install with pip, trying alternative method..."
+    
+    # Try installing with --no-cache-dir and --force-reinstall
+    if pip install --no-cache-dir --force-reinstall -r requirements.txt; then
+        print_success "Python dependencies installed with alternative method"
+    else
+        print_error "Failed to install Python dependencies"
+        print_status "Trying to install packages individually..."
+        
+        # Install packages individually
+        packages=("discord.py==2.3.2" "wavelink==2.6.4" "aiohttp==3.9.1" "asyncpg==0.29.0" "python-dotenv==1.0.0" "colorama==0.4.6" "psutil==5.9.6" "yarl>=1.7.2")
+        
+        for package in "${packages[@]}"; do
+            print_status "Installing $package..."
+            if pip install --no-cache-dir "$package"; then
+                print_success "Installed $package"
+            else
+                print_warning "Failed to install $package, continuing..."
+            fi
+        done
+        
+        print_success "Dependency installation completed"
+    fi
+fi
 
 # Download Lavalink if Java is available
 if command -v java &> /dev/null; then
@@ -155,6 +183,7 @@ chmod +x install.sh
 chmod +x update.sh
 chmod +x start.sh
 chmod +x stop.sh
+chmod +x troubleshoot.sh
 print_success "Scripts made executable"
 
 # Database setup instructions
