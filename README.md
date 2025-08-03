@@ -221,6 +221,12 @@ The bot automatically creates these tables:
 - Ensure bot has required roles
 - Verify channel permissions
 
+**yarl installation issues**
+- The install script automatically installs yarl from system packages
+- If you encounter issues, run: `sudo apt-get install python3-yarl` (Ubuntu/Debian)
+- Or: `sudo dnf install python3-yarl` (Fedora/RHEL)
+- Or: `sudo pacman -S python-yarl` (Arch Linux)
+
 ### Getting Help
 1. Check the logs in the `logs/` directory
 2. Run with verbose logging: `./start.sh -v`

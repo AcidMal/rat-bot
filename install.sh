@@ -78,25 +78,51 @@ source venv/bin/activate
 print_status "Upgrading pip..."
 pip install --upgrade pip
 
+# Install system dependencies first
+print_status "Installing system dependencies..."
+if command -v apt-get &> /dev/null; then
+    # Ubuntu/Debian
+    print_status "Installing yarl from system packages..."
+    sudo apt-get update
+    sudo apt-get install -y python3-yarl python3-dev build-essential libssl-dev libffi-dev
+    print_success "System dependencies installed"
+elif command -v dnf &> /dev/null; then
+    # Fedora/RHEL
+    print_status "Installing yarl from system packages..."
+    sudo dnf install -y python3-yarl python3-devel openssl-devel libffi-devel
+    print_success "System dependencies installed"
+elif command -v pacman &> /dev/null; then
+    # Arch Linux
+    print_status "Installing yarl from system packages..."
+    sudo pacman -S --noconfirm python-yarl base-devel
+    print_success "System dependencies installed"
+else
+    print_warning "Could not detect package manager, will try pip installation"
+fi
+
 # Install Python dependencies
 print_status "Installing Python dependencies..."
 print_status "This may take a few minutes..."
 
+# Create a temporary requirements file without yarl
+print_status "Creating temporary requirements file..."
+grep -v "yarl" requirements.txt > requirements_temp.txt
+
 # Install dependencies with better error handling
-if pip install -r requirements.txt; then
+if pip install -r requirements_temp.txt; then
     print_success "Python dependencies installed"
 else
     print_warning "Some packages failed to install with pip, trying alternative method..."
     
     # Try installing with --no-cache-dir and --force-reinstall
-    if pip install --no-cache-dir --force-reinstall -r requirements.txt; then
+    if pip install --no-cache-dir --force-reinstall -r requirements_temp.txt; then
         print_success "Python dependencies installed with alternative method"
     else
         print_error "Failed to install Python dependencies"
         print_status "Trying to install packages individually..."
         
-        # Install packages individually
-        packages=("discord.py==2.3.2" "wavelink==2.6.4" "aiohttp==3.9.1" "asyncpg==0.29.0" "python-dotenv==1.0.0" "colorama==0.4.6" "psutil==5.9.6" "yarl>=1.7.2")
+        # Install packages individually (excluding yarl)
+        packages=("discord.py==2.3.2" "wavelink==2.6.4" "aiohttp==3.9.1" "asyncpg==0.29.0" "python-dotenv==1.0.0" "colorama==0.4.6" "psutil==5.9.6")
         
         for package in "${packages[@]}"; do
             print_status "Installing $package..."
@@ -109,6 +135,18 @@ else
         
         print_success "Dependency installation completed"
     fi
+fi
+
+# Clean up temporary file
+rm -f requirements_temp.txt
+
+# Verify yarl installation
+print_status "Verifying yarl installation..."
+if python3 -c "import yarl; print('yarl version:', yarl.__version__)" 2>/dev/null; then
+    print_success "yarl is installed and working"
+else
+    print_warning "yarl not found, attempting pip installation as fallback..."
+    pip install --no-cache-dir yarl==1.9.2 || print_warning "yarl installation failed, but continuing..."
 fi
 
 # Download Lavalink if Java is available

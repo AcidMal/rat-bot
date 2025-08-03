@@ -93,11 +93,51 @@ else
     exit 1
 fi
 
+# Update system dependencies first
+print_status "Updating system dependencies..."
+if command -v apt-get &> /dev/null; then
+    # Ubuntu/Debian
+    print_status "Updating yarl from system packages..."
+    sudo apt-get update
+    sudo apt-get install -y python3-yarl
+    print_success "System dependencies updated"
+elif command -v dnf &> /dev/null; then
+    # Fedora/RHEL
+    print_status "Updating yarl from system packages..."
+    sudo dnf install -y python3-yarl
+    print_success "System dependencies updated"
+elif command -v pacman &> /dev/null; then
+    # Arch Linux
+    print_status "Updating yarl from system packages..."
+    sudo pacman -S --noconfirm python-yarl
+    print_success "System dependencies updated"
+else
+    print_warning "Could not detect package manager, will try pip installation"
+fi
+
 # Update Python dependencies
 print_status "Updating Python dependencies..."
 pip install --upgrade pip
-pip install -r requirements.txt
+
+# Create a temporary requirements file without yarl
+print_status "Creating temporary requirements file..."
+grep -v "yarl" requirements.txt > requirements_temp.txt
+
+# Install dependencies
+pip install -r requirements_temp.txt
 print_success "Dependencies updated"
+
+# Clean up temporary file
+rm -f requirements_temp.txt
+
+# Verify yarl installation
+print_status "Verifying yarl installation..."
+if python3 -c "import yarl; print('yarl version:', yarl.__version__)" 2>/dev/null; then
+    print_success "yarl is installed and working"
+else
+    print_warning "yarl not found, attempting pip installation as fallback..."
+    pip install --no-cache-dir yarl==1.9.2 || print_warning "yarl installation failed, but continuing..."
+fi
 
 # Check if Lavalink needs updating
 if command -v java &> /dev/null && [ -f "Lavalink.jar" ]; then
