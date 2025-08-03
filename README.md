@@ -1,256 +1,442 @@
-# 🐀 RatBot - Discord Music & Moderation Bot
+# Advanced Discord Bot
 
-A feature-rich Discord bot built with Discord.py that includes music playback, moderation tools, and comprehensive logging.
+A feature-rich, scalable Discord bot built with Python, featuring advanced music capabilities, comprehensive moderation tools, database integration, and clustering support.
 
-## ✨ Features
+## 🌟 Features
 
-### 🎵 Music Features
-- **YouTube, SoundCloud, and more** - Play music from various sources
-- **Queue management** - Add, remove, and manage your music queue
-- **Volume control** - Adjust playback volume
-- **Playback controls** - Play, pause, resume, skip, and stop
-- **Lavalink integration** - High-quality audio processing
+### 🎵 Advanced Music System
+- **Hybrid Architecture**: Lavalink + yt-dlp for maximum compatibility
+- **YouTube Bypass**: Direct YouTube access via yt-dlp when needed
+- **Smart Fallback**: Automatic retry with alternative sources
+- **Multiple Sources**: SoundCloud, Bandcamp, YouTube, Twitch
+- **Dual Search Modes**: Regular (`!play song`) or YouTube (`!play yt:song`)
+- **Queue Management**: Add, remove, shuffle, and loop tracks
+- **Audio Filters**: Equalizer, bass boost, speed control
+- **Playlist Support**: Import and manage playlists
+- **Vote Skip System**: Democratic track skipping
 
-### 🛡️ Moderation Features
-- **User management** - Kick, ban, unban, timeout users
-- **Warning system** - Issue warnings to users
-- **Message clearing** - Bulk delete messages
-- **Comprehensive logging** - All actions logged to database and Discord channels
+### 🛡️ Advanced Moderation
+- **Comprehensive Commands**: Kick, ban, timeout, warn, and more
+- **Auto-moderation**: Spam detection, word filters, link filtering
+- **Moderation Logging**: All actions logged to database
+- **Infraction Tracking**: User warning history and escalation
+- **Bulk Actions**: Mass delete messages, bulk ban
+- **Appeal System**: Built-in appeal and review process
 
-### 📊 General Features
-- **Server information** - Detailed server stats and info
-- **User information** - User profiles and statistics
-- **System monitoring** - Bot performance and system stats
-- **Customizable prefix** - Change bot command prefix
-- **Embedded responses** - Beautiful, formatted responses
+### 📊 Database Integration
+- **Multiple Backends**: MongoDB (production) or JSON (development)
+- **Persistent Storage**: User data, guild settings, music queues
+- **Analytics**: Command usage, user statistics, server metrics
+- **Backup System**: Automated backups and data recovery
+
+### ⚡ Sharding & Clustering
+- **Auto-sharding**: Automatic shard management for large bots
+- **Node Clustering**: Distribute load across multiple servers
+- **Redis Integration**: Inter-node communication and caching
+- **Load Balancing**: Intelligent request distribution
+- **High Availability**: Automatic failover and recovery
+
+### 🌐 Web Dashboard
+- **Real-time Monitoring**: Bot statistics and performance metrics
+- **Configuration Management**: Change settings via web interface
+- **User Management**: View and manage user data
+- **Server Analytics**: Detailed guild statistics and insights
+
+### 🎮 Fun & Utility
+- **Games**: 8-ball, rock-paper-scissors, trivia
+- **Utilities**: QR codes, URL shortening, weather
+- **Information**: Server info, user profiles, avatar display
+- **Tools**: Base64 encoding, hash generation, JSON formatting
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8 or higher
-- Java 11 or higher (for Lavalink)
-- PostgreSQL database
-- Discord Bot Token
+- Python 3.9+
+- Java 17+ (for Lavalink)
+- MongoDB or Redis (optional)
+- Linux server (Ubuntu/Debian/CentOS/Arch)
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone <your-repo-url>
-   cd rat-bot
+   git clone <repository-url>
+   cd discord-bot
    ```
 
-2. **Run the installation script**
+2. **Run the interactive installer**
    ```bash
    chmod +x install.sh
    ./install.sh
    ```
 
-3. **Configure the bot**
-   - Edit the `.env` file with your settings
-   - Set up your PostgreSQL database
-   - Add your Discord bot token
+3. **Follow the setup wizard**
+   - Enter your Discord bot token
+   - Configure database settings
+   - Set up Lavalink and Redis
+   - Configure web API (optional)
+   - Enable sharding (optional)
 
 4. **Start the bot**
    ```bash
    ./start.sh
    ```
 
-## 📋 Configuration
+### Manual Installation
 
-### Environment Variables (.env file)
+If you prefer manual installation:
+
+```bash
+# Install system dependencies
+sudo apt update && sudo apt install python3 python3-pip python3-venv openjdk-17-jdk
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Download Lavalink
+wget https://github.com/lavalink-devs/Lavalink/releases/download/4.0.4/Lavalink.jar
+
+# Copy and configure environment
+cp env.example .env
+# Edit .env with your settings
+
+# Start the bot
+python main.py
+```
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+Create a `.env` file with the following variables:
 
 ```env
 # Discord Bot Configuration
 DISCORD_TOKEN=your_discord_token_here
 GUILD_ID=your_guild_id_here
+PREFIX=!
+EMBED_COLOR=0x7289da
 
 # Database Configuration
-DATABASE_URL=postgresql://user:password@localhost/ratbot
+DATABASE_TYPE=mongodb  # or json
+MONGODB_URI=mongodb://localhost:27017
+DATABASE_NAME=discord_bot
+JSON_DATABASE_PATH=data/database.json
 
 # Lavalink Configuration
 LAVALINK_HOST=localhost
 LAVALINK_PORT=2333
 LAVALINK_PASSWORD=youshallnotpass
+LAVALINK_SSL=false
 
-# Bot Configuration
-PREFIX=!
-EMBED_COLOR=0x00ff00
+# Redis Configuration (for clustering)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+
+# Web API Configuration
+WEB_API_ENABLED=false
+WEB_HOST=0.0.0.0
+WEB_PORT=8080
+WEB_SECRET_KEY=your_secret_key_here
+CORS_ORIGINS=*
+
+# Sharding Configuration
+SHARDING_ENABLED=false
+SHARD_COUNT=
+AUTO_SHARD=true
+
+# Node Configuration
+NODE_ID=node-1
+CLUSTER_NAME=discord-bot-cluster
+IS_PRIMARY_NODE=true
+NODE_HEARTBEAT=30
 
 # Logging Configuration
 LOG_LEVEL=INFO
+LOG_FILE=logs/bot.log
 
-# ModLog Configuration
-MODLOG_CHANNEL_ID=your_modlog_channel_id_here
+# Owner Configuration
+OWNER_IDS=your_user_id_here
 ```
 
 ### Database Setup
 
-1. Install PostgreSQL
-2. Create a database named `ratbot`
-3. Update the `DATABASE_URL` in your `.env` file
-4. The bot will automatically create the necessary tables
+#### MongoDB (Recommended for Production)
+```bash
+# Install MongoDB
+sudo apt install mongodb-org
 
-## 🎮 Commands
+# Start MongoDB service
+sudo systemctl start mongod
+sudo systemctl enable mongod
+
+# The bot will automatically create collections
+```
+
+#### JSON Database (Development)
+```bash
+# No additional setup required
+# Database file will be created automatically
+```
+
+### Lavalink Setup
+
+The installer automatically downloads and configures Lavalink. For manual setup:
+
+```bash
+# Download Lavalink
+wget https://github.com/lavalink-devs/Lavalink/releases/download/4.0.4/Lavalink.jar
+
+# Start Lavalink (in separate terminal)
+java -jar Lavalink.jar
+```
+
+## 📝 Commands
 
 ### Music Commands
-- `!join` / `!j` - Join a voice channel
-- `!play <query>` / `!p <query>` - Play a song
+- `!play <query>` - Play a song or add to queue
 - `!pause` - Pause the current track
-- `!resume` - Resume the current track
-- `!stop` - Stop playing and clear queue
-- `!skip` / `!s` - Skip the current track
-- `!queue` / `!q` - Show the current queue
-- `!volume <0-100>` / `!vol <0-100>` - Set volume
-- `!leave` / `!dc` - Leave the voice channel
+- `!resume` - Resume playback
+- `!skip` - Skip the current track
+- `!stop` - Stop music and clear queue
+- `!queue` - Show the music queue
+- `!volume <1-100>` - Set volume
+- `!loop <none|track|queue>` - Set loop mode
+- `!shuffle` - Shuffle the queue
+- `!nowplaying` - Show current track info
 
 ### Moderation Commands
-- `!kick <user> [reason]` - Kick a user
-- `!ban <user> [reason]` - Ban a user
+- `!kick <member> [reason]` - Kick a member
+- `!ban <member> [reason]` - Ban a member
 - `!unban <user_id> [reason]` - Unban a user
-- `!timeout <user> <duration> [reason]` - Timeout a user
-- `!warn <user> [reason]` - Warn a user
-- `!modlogs [user] [limit]` - Show moderation logs
-- `!clear <amount>` - Clear messages
+- `!timeout <member> <duration> [reason]` - Timeout a member
+- `!warn <member> [reason]` - Warn a member
+- `!modlogs [member]` - View moderation logs
+- `!clear <amount> [member]` - Clear messages
 
 ### General Commands
-- `!ping` - Check bot latency
-- `!info` - Show bot information
-- `!serverinfo` / `!server` - Show server information
-- `!userinfo [user]` / `!user [user]` - Show user information
-- `!avatar [user]` / `!av [user]` - Show user avatar
-- `!invite` - Get bot invite link
 - `!help [command]` - Show help information
+- `!ping` - Show bot latency
+- `!info` - Show bot information
+- `!serverinfo` - Show server information
+- `!userinfo [member]` - Show user information
+- `!avatar [member]` - Show user avatar
 
-## 🛠️ Management Scripts
+### Fun Commands
+- `!roll [sides]` - Roll a dice
+- `!flip` - Flip a coin
+- `!8ball <question>` - Ask the magic 8-ball
+- `!joke` - Get a random joke
+- `!fact` - Get a random fact
+- `!meme` - Get a random meme
 
-### Installation
+### Utility Commands
+- `!qr <text>` - Generate QR code
+- `!base64 <encode|decode> <text>` - Base64 operations
+- `!hash <algorithm> <text>` - Hash text
+- `!timestamp [timestamp]` - Convert timestamps
+- `!remind <time> <message>` - Set a reminder
+- `!poll <question> <options...>` - Create a poll
+
+### Admin Commands (Bot Owner Only)
+- `!reload <cog>` - Reload a cog
+- `!shutdown` - Shutdown the bot
+- `!restart` - Restart the bot
+- `!update` - Update from GitHub
+- `!eval <code>` - Evaluate Python code
+- `!logs [lines]` - View recent logs
+
+## 🔧 Management Scripts
+
+### Start/Stop Scripts
 ```bash
-./install.sh
+./start.sh          # Start the bot
+./stop.sh           # Stop the bot
+./restart.sh        # Restart the bot
 ```
-Installs all dependencies, downloads Lavalink, and sets up the environment.
 
-### Starting the Bot
+### Update Script
 ```bash
-./start.sh              # Start normally
-./start.sh -d           # Start in background
-./start.sh -v           # Start with verbose logging
-./start.sh --no-lavalink # Start without Lavalink
+./update.sh         # Update from GitHub
+./update.sh --no-restart  # Update without restarting
 ```
 
-### Stopping the Bot
+### Backup Script
 ```bash
-./stop.sh
+./backup.sh         # Create configuration backup
 ```
-Safely stops the bot and Lavalink server.
 
-### Updating the Bot
+## 🐳 Docker Support
+
+### Using Docker Compose
+```yaml
+version: '3.8'
+services:
+  discord-bot:
+    build: .
+    environment:
+      - DISCORD_TOKEN=your_token_here
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - mongodb
+      - redis
+      - lavalink
+
+  mongodb:
+    image: mongo:7.0
+    volumes:
+      - mongodb_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+
+  lavalink:
+    image: fredboat/lavalink:dev
+    volumes:
+      - ./application.yml:/opt/Lavalink/application.yml
+
+volumes:
+  mongodb_data:
+```
+
+### Running with Docker
 ```bash
-./update.sh
+docker-compose up -d
 ```
-Updates the bot from GitHub and updates dependencies.
 
-### Troubleshooting
+## 🌐 Web Dashboard
+
+Access the web dashboard at `http://localhost:8080` (if enabled).
+
+Features:
+- Real-time bot statistics
+- Server management
+- User analytics
+- Configuration editor
+- Log viewer
+
+## 📊 Monitoring
+
+### System Service (systemd)
 ```bash
-./troubleshoot.sh
-```
-Interactive script to fix common installation and dependency issues.
+# Install as system service
+sudo cp discord-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable discord-bot
+sudo systemctl start discord-bot
 
-## 📁 Project Structure
+# View status
+sudo systemctl status discord-bot
 
+# View logs
+journalctl -u discord-bot -f
 ```
-rat-bot/
-├── main.py                 # Main bot file
-├── config.py              # Configuration settings
-├── requirements.txt       # Python dependencies
-├── application.yml        # Lavalink configuration
-├── install.sh            # Installation script
-├── start.sh              # Start script
-├── stop.sh               # Stop script
-├── update.sh             # Update script
-├── .env                  # Environment variables
-├── cogs/                 # Bot cogs (modules)
-│   ├── general.py        # General commands
-│   ├── music.py          # Music commands
-│   └── moderation.py     # Moderation commands
-├── database/             # Database models
-│   └── models.py         # Database class
-├── logs/                 # Log files
-└── data/                 # Data files
-```
+
+### Health Checks
+The bot includes built-in health checks:
+- Database connectivity
+- Lavalink connection
+- Redis connection (if enabled)
+- Shard health (if sharded)
+- Node cluster status
 
 ## 🔧 Development
 
+### Project Structure
+```
+discord-bot/
+├── core/                 # Core bot components
+│   ├── bot.py           # Main bot class
+│   ├── node_manager.py  # Clustering manager
+│   └── shard_manager.py # Sharding manager
+├── cogs/                # Command modules
+│   ├── music.py         # Music commands
+│   ├── moderation.py    # Moderation commands
+│   ├── general.py       # General commands
+│   ├── admin.py         # Admin commands
+│   ├── fun.py           # Fun commands
+│   └── utility.py       # Utility commands
+├── database/            # Database modules
+│   ├── base.py          # Database interface
+│   ├── mongodb.py       # MongoDB implementation
+│   └── json_db.py       # JSON implementation
+├── web/                 # Web dashboard
+├── config.py            # Configuration management
+├── main.py              # Entry point
+└── requirements.txt     # Python dependencies
+```
+
 ### Adding New Commands
-1. Create a new cog in the `cogs/` directory
-2. Add the cog to the `load_cogs()` method in `main.py`
-3. Follow the existing cog structure
+1. Create a new command in the appropriate cog
+2. Use proper error handling and logging
+3. Add database integration if needed
+4. Update help documentation
 
-### Database Schema
-The bot automatically creates these tables:
-- `modlogs` - Moderation action logs
-- `guild_settings` - Per-guild settings
-- `music_queues` - Music queue data
-
-### Logging
-- Bot logs: `logs/bot.log`
-- Lavalink logs: `logs/lavalink.log`
-- Log level can be set in `.env` file
+### Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
-**Bot won't start**
-- Check your `.env` file configuration
-- Ensure PostgreSQL is running
-- Verify your Discord token is correct
+**Bot not responding to commands**
+- Check if the bot has proper permissions
+- Verify the command prefix
+- Check bot status and logs
 
 **Music not working**
-- Make sure Java 11+ is installed
-- Check if Lavalink.jar exists
-- Verify Lavalink is running (check logs/lavalink.log)
+- Ensure Lavalink is running
+- Check Java version (17+ required)
+- Verify Lavalink configuration
 
 **Database connection failed**
-- Ensure PostgreSQL is installed and running
-- Check your DATABASE_URL in `.env`
-- Verify the database exists
+- Check MongoDB/Redis service status
+- Verify connection string
+- Check firewall settings
 
-**Permission errors**
-- Check bot permissions in Discord
-- Ensure bot has required roles
-- Verify channel permissions
-
-**yarl installation issues**
-- The install script automatically installs yarl from system packages
-- If you encounter issues, run: `sudo apt-get install python3-yarl` (Ubuntu/Debian)
-- Or: `sudo dnf install python3-yarl` (Fedora/RHEL)
-- Or: `sudo pacman -S python-yarl` (Arch Linux)
+**Installation fails**
+- Check Python version (3.9+ required)
+- Install system dependencies
+- Check internet connection
 
 ### Getting Help
-1. Check the logs in the `logs/` directory
-2. Run with verbose logging: `./start.sh -v`
-3. Check the bot's status with `!ping` and `!info`
+- Check the logs: `tail -f logs/bot.log`
+- Run diagnostics: `./troubleshoot.sh`
+- Create an issue on GitHub
+- Join our Discord server (if available)
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🤝 Contributing
+## 🙏 Acknowledgments
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+- [discord.py](https://github.com/Rapptz/discord.py) - Discord API wrapper
+- [Lavalink](https://github.com/lavalink-devs/Lavalink) - Audio server
+- [MongoDB](https://www.mongodb.com/) - Database
+- [Redis](https://redis.io/) - Caching and messaging
+- [FastAPI](https://fastapi.tiangolo.com/) - Web framework
 
 ## 📞 Support
 
-For support and questions:
-- Create an issue on GitHub
-- Check the logs for error messages
-- Verify your configuration is correct
+For support, please:
+1. Check the documentation
+2. Search existing issues
+3. Create a new issue with details
+4. Join our community Discord (if available)
 
 ---
 
-**Made with ❤️ using Discord.py and Lavalink** 
+Made with ❤️ by the Discord Bot Team

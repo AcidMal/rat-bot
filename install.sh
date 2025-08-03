@@ -1,21 +1,33 @@
 #!/bin/bash
 
-# RatBot Installation Script
-# This script installs all dependencies and sets up the bot
+# Advanced Discord Bot Installation Script
+# Supports Ubuntu/Debian, CentOS/RHEL/Fedora, and Arch Linux
 
 set -e
-
-echo "🐀 RatBot Installation Script"
-echo "=============================="
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Global variables
+PYTHON_VERSION="3.9"
+JAVA_VERSION="17"
+LAVALINK_VERSION="4.0.8"
+
 # Function to print colored output
+print_header() {
+    echo -e "${PURPLE}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${PURPLE}║                  Advanced Discord Bot Installer              ║${NC}"
+    echo -e "${PURPLE}║                     Interactive Setup                        ║${NC}"
+    echo -e "${PURPLE}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+}
+
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -32,361 +44,663 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Check if Python 3.8+ is installed
-print_status "Checking Python version..."
-if command -v python3 &> /dev/null; then
-    PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-    print_success "Python $PYTHON_VERSION found"
-else
-    print_error "Python 3.8+ is required but not installed. Please install Python 3.8 or higher."
-    exit 1
-fi
+print_question() {
+    echo -e "${CYAN}[QUESTION]${NC} $1"
+}
 
-# Check if pip is installed
-print_status "Checking pip..."
-if command -v pip3 &> /dev/null; then
-    print_success "pip3 found"
-else
-    print_error "pip3 is required but not installed. Please install pip."
-    exit 1
-fi
-
-# Check if Java is installed (for Lavalink)
-print_status "Checking Java..."
-if command -v java &> /dev/null; then
-    JAVA_VERSION=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2)
-    print_success "Java $JAVA_VERSION found"
-else
-    print_warning "Java not found. Lavalink will not work without Java 11+."
-    print_status "Please install Java 11 or higher to use music features."
-fi
-
-# Database setup function
-setup_database() {
-    print_status "Setting up PostgreSQL database..."
+# Function to detect OS
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$NAME
+        VER=$VERSION_ID
+    elif type lsb_release >/dev/null 2>&1; then
+        OS=$(lsb_release -si)
+        VER=$(lsb_release -sr)
+    elif [ -f /etc/redhat-release ]; then
+        OS="CentOS"
+        VER=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+')
+    else
+        OS=$(uname -s)
+        VER=$(uname -r)
+    fi
     
-    # Install PostgreSQL
+    print_status "Detected OS: $OS $VER"
+}
+
+# Function to check if running as root
+check_root() {
+    if [ "$EUID" -eq 0 ]; then
+        print_error "Please do not run this script as root!"
+        print_status "Run as a regular user with sudo privileges."
+        exit 1
+    fi
+}
+
+# Function to check sudo access
+check_sudo() {
+    if ! sudo -n true 2>/dev/null; then
+        print_status "This script requires sudo privileges for system package installation."
+        print_status "You may be prompted for your password."
+        sudo -v
+    fi
+}
+
+# Function to update system packages
+update_system() {
+    print_status "Updating system packages..."
+    
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update -y
+        sudo apt-get upgrade -y
+    elif command -v dnf &> /dev/null; then
+        sudo dnf update -y
+    elif command -v yum &> /dev/null; then
+        sudo yum update -y
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -Syu --noconfirm
+    else
+        print_warning "Could not detect package manager. Skipping system update."
+    fi
+    
+    print_success "System packages updated"
+}
+
+# Function to install Python
+install_python() {
+    print_status "Installing Python ${PYTHON_VERSION}..."
+    
+    if command -v python3 &> /dev/null; then
+        CURRENT_PYTHON=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+        if [[ $(echo "$CURRENT_PYTHON >= $PYTHON_VERSION" | bc -l 2>/dev/null || echo "1") -eq 1 ]]; then
+            print_success "Python $CURRENT_PYTHON is already installed"
+            return
+        fi
+    fi
+    
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get install -y python3 python3-pip python3-venv python3-dev build-essential libssl-dev libffi-dev
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y python3 python3-pip python3-venv python3-devel gcc openssl-devel libffi-devel
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y python3 python3-pip python3-venv python3-devel gcc openssl-devel libffi-devel
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -S --noconfirm python python-pip base-devel
+    else
+        print_error "Could not install Python. Please install Python ${PYTHON_VERSION}+ manually."
+        exit 1
+    fi
+    
+    print_success "Python installed successfully"
+}
+
+# Function to install Java (for Lavalink)
+install_java() {
+    print_status "Installing Java ${JAVA_VERSION}..."
+    
+    if command -v java &> /dev/null; then
+        JAVA_VER=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
+        if [ "$JAVA_VER" -ge "$JAVA_VERSION" ] 2>/dev/null; then
+            print_success "Java $JAVA_VER is already installed"
+            return
+        fi
+    fi
+    
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get install -y openjdk-${JAVA_VERSION}-jdk
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y java-${JAVA_VERSION}-openjdk java-${JAVA_VERSION}-openjdk-devel
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y java-${JAVA_VERSION}-openjdk java-${JAVA_VERSION}-openjdk-devel
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -S --noconfirm jdk${JAVA_VERSION}-openjdk
+    fi
+    
+    print_success "Java installed successfully"
+}
+
+# Function to install MongoDB
+install_mongodb() {
+    print_status "Installing MongoDB..."
+    
+    if command -v mongod &> /dev/null; then
+        print_success "MongoDB is already installed"
+        return
+    fi
+    
     if command -v apt-get &> /dev/null; then
         # Ubuntu/Debian
-        print_status "Installing PostgreSQL..."
+        curl -fsSL https://pgp.mongodb.com/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
         sudo apt-get update
-        sudo apt-get install -y postgresql postgresql-contrib
-        print_success "PostgreSQL installed"
+        sudo apt-get install -y mongodb-org
         
-        # Start and enable PostgreSQL service
-        print_status "Starting PostgreSQL service..."
-        sudo systemctl start postgresql
-        sudo systemctl enable postgresql
-        print_success "PostgreSQL service started and enabled"
+        # Start and enable MongoDB
+        sudo systemctl start mongod
+        sudo systemctl enable mongod
         
     elif command -v dnf &> /dev/null; then
-        # Fedora/RHEL
-        print_status "Installing PostgreSQL..."
-        sudo dnf install -y postgresql postgresql-server postgresql-contrib
-        print_success "PostgreSQL installed"
-        
-        # Initialize and start PostgreSQL
-        print_status "Initializing PostgreSQL database..."
-        sudo postgresql-setup --initdb
-        sudo systemctl start postgresql
-        sudo systemctl enable postgresql
-        print_success "PostgreSQL service started and enabled"
+        # Fedora
+        cat <<EOF | sudo tee /etc/yum.repos.d/mongodb-org-7.0.repo
+[mongodb-org-7.0]
+name=MongoDB Repository
+baseurl=https://repo.mongodb.org/yum/redhat/\$releasever/mongodb-org/7.0/x86_64/
+gpgcheck=1
+enabled=1
+gpgkey=https://pgp.mongodb.com/server-7.0.asc
+EOF
+        sudo dnf install -y mongodb-org
+        sudo systemctl start mongod
+        sudo systemctl enable mongod
         
     elif command -v pacman &> /dev/null; then
         # Arch Linux
-        print_status "Installing PostgreSQL..."
-        sudo pacman -S --noconfirm postgresql
-        print_success "PostgreSQL installed"
-        
-        # Initialize and start PostgreSQL
-        print_status "Initializing PostgreSQL database..."
-        sudo -u postgres initdb -D /var/lib/postgres/data
-        sudo systemctl start postgresql
-        sudo systemctl enable postgresql
-        print_success "PostgreSQL service started and enabled"
-        
+        sudo pacman -S --noconfirm mongodb-bin
+        sudo systemctl start mongodb
+        sudo systemctl enable mongodb
     else
-        print_warning "Could not detect package manager for PostgreSQL installation"
-        print_status "Please install PostgreSQL manually and ensure it's running"
-        return 1
+        print_warning "Could not install MongoDB automatically. Please install it manually."
+        return
     fi
     
-    # Create database and user
-    print_status "Creating database and user..."
+    print_success "MongoDB installed and started"
+}
+
+# Function to install Redis
+install_redis() {
+    print_status "Installing Redis..."
     
-    # Generate random password for database user
-    DB_PASSWORD=$(openssl rand -base64 32)
-    
-    # Create database user and database
-    sudo -u postgres psql -c "CREATE USER ratbot WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || print_warning "User ratbot might already exist"
-    sudo -u postgres psql -c "CREATE DATABASE ratbot OWNER ratbot;" 2>/dev/null || print_warning "Database ratbot might already exist"
-    sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ratbot TO ratbot;" 2>/dev/null || print_warning "Privileges might already be granted"
-    
-    print_success "Database and user created"
-    
-    # Update .env file with database credentials
-    print_status "Updating .env file with database credentials..."
-    if [ -f ".env" ]; then
-        # Backup existing .env
-        cp .env .env.backup
-        print_status "Backed up existing .env file"
+    if command -v redis-server &> /dev/null; then
+        print_success "Redis is already installed"
+        return
     fi
     
-    # Create new .env with database credentials
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get install -y redis-server
+        sudo systemctl start redis-server
+        sudo systemctl enable redis-server
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y redis
+        sudo systemctl start redis
+        sudo systemctl enable redis
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y redis
+        sudo systemctl start redis
+        sudo systemctl enable redis
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -S --noconfirm redis
+        sudo systemctl start redis
+        sudo systemctl enable redis
+    fi
+    
+    print_success "Redis installed and started"
+}
+
+# Function to download Lavalink and plugins
+download_lavalink() {
+    print_status "Setting up Lavalink ${LAVALINK_VERSION} music server..."
+    
+    if [ -f "Lavalink-latest.jar" ]; then
+        print_success "Lavalink-latest.jar already exists"
+    else
+        LAVALINK_URL="https://github.com/lavalink-devs/Lavalink/releases/download/${LAVALINK_VERSION}/Lavalink.jar"
+        
+        if command -v curl &> /dev/null; then
+            curl -L -o Lavalink-latest.jar "$LAVALINK_URL"
+        elif command -v wget &> /dev/null; then
+            wget -O Lavalink-latest.jar "$LAVALINK_URL"
+        else
+            print_error "Neither curl nor wget found. Please install one of them."
+            exit 1
+        fi
+        
+        if [ -f "Lavalink-latest.jar" ]; then
+            print_success "Lavalink downloaded successfully"
+        else
+            print_error "Failed to download Lavalink"
+            exit 1
+        fi
+    fi
+    
+    # Create plugins directory
+    print_status "Setting up Lavalink plugins..."
+    mkdir -p plugins
+    
+    # Download LavaSrc plugin
+    if [ ! -f "plugins/lavasrc-plugin-4.2.0.jar" ]; then
+        print_status "Downloading LavaSrc plugin..."
+        LAVASRC_URL="https://maven.topi.wtf/releases/com/github/topi314/lavasrc/lavasrc-plugin/4.2.0/lavasrc-plugin-4.2.0.jar"
+        
+        if command -v curl &> /dev/null; then
+            curl -L -o plugins/lavasrc-plugin-4.2.0.jar "$LAVASRC_URL"
+        elif command -v wget &> /dev/null; then
+            wget -O plugins/lavasrc-plugin-4.2.0.jar "$LAVASRC_URL"
+        fi
+        
+        if [ -f "plugins/lavasrc-plugin-4.2.0.jar" ]; then
+            print_success "LavaSrc plugin downloaded"
+        else
+            print_warning "Failed to download LavaSrc plugin"
+        fi
+    fi
+    
+    # Download LavaSearch plugin
+    if [ ! -f "plugins/lavasearch-plugin-1.0.0.jar" ]; then
+        print_status "Downloading LavaSearch plugin..."
+        LAVASEARCH_URL="https://maven.topi.wtf/releases/com/github/topi314/lavasearch/lavasearch-plugin/1.0.0/lavasearch-plugin-1.0.0.jar"
+        
+        if command -v curl &> /dev/null; then
+            curl -L -o plugins/lavasearch-plugin-1.0.0.jar "$LAVASEARCH_URL"
+        elif command -v wget &> /dev/null; then
+            wget -O plugins/lavasearch-plugin-1.0.0.jar "$LAVASEARCH_URL"
+        fi
+        
+        if [ -f "plugins/lavasearch-plugin-1.0.0.jar" ]; then
+            print_success "LavaSearch plugin downloaded"
+        else
+            print_warning "Failed to download LavaSearch plugin"
+        fi
+    fi
+}
+
+# Function to create Python virtual environment
+create_venv() {
+    print_status "Creating Python virtual environment..."
+    
+    if [ -d "venv" ]; then
+        print_success "Virtual environment already exists"
+        return
+    fi
+    
+    python3 -m venv venv
+    source venv/bin/activate
+    
+    # Upgrade pip
+    pip install --upgrade pip
+    
+    print_success "Virtual environment created and activated"
+}
+
+# Function to install Python dependencies
+install_python_deps() {
+    print_status "Installing Python dependencies..."
+    
+    source venv/bin/activate
+    
+    # Install dependencies with better error handling
+    if pip install -r requirements.txt; then
+        print_success "Python dependencies installed successfully"
+    else
+        print_warning "Some packages failed to install, trying alternative method..."
+        
+        # Try installing packages individually
+        while read requirement; do
+            if [[ $requirement =~ ^[[:space:]]*# ]] || [[ -z $requirement ]]; then
+                continue
+            fi
+            
+            print_status "Installing $requirement..."
+            if ! pip install --no-cache-dir "$requirement"; then
+                print_warning "Failed to install $requirement, continuing..."
+            fi
+        done < requirements.txt
+        
+        print_success "Python dependency installation completed"
+    fi
+}
+
+# Interactive configuration function
+interactive_config() {
+    print_header
+    echo -e "${CYAN}Welcome to the Advanced Discord Bot Setup!${NC}"
+    echo ""
+    echo "This script will guide you through setting up your Discord bot with:"
+    echo "• Hybrid music system (Lavalink + yt-dlp for YouTube bypass)"
+    echo "• Multiple music sources (SoundCloud, Bandcamp, YouTube)"
+    echo "• Smart fallback system for failed YouTube tracks"
+    echo "• MongoDB database with moderation logging"
+    echo "• Redis for node communication and caching"
+    echo "• Web API for configuration"
+    echo "• Sharding and clustering support"
+    echo ""
+    
+    # Discord Bot Token
+    while true; do
+        print_question "Enter your Discord Bot Token:"
+        read -s DISCORD_TOKEN
+        echo ""
+        
+        if [[ ${#DISCORD_TOKEN} -eq 0 ]]; then
+            print_error "Token cannot be empty!"
+            continue
+        fi
+        
+        if [[ ${#DISCORD_TOKEN} -lt 50 ]]; then
+            print_error "Token seems too short. Please check and try again."
+            continue
+        fi
+        
+        break
+    done
+    
+    # Guild ID (optional)
+    print_question "Enter your main Guild/Server ID (optional, for slash commands):"
+    read GUILD_ID
+    
+    # Bot Prefix
+    print_question "Enter bot command prefix (default: !):"
+    read BOT_PREFIX
+    BOT_PREFIX=${BOT_PREFIX:-!}
+    
+    # Database Configuration
+    echo ""
+    print_status "Database Configuration"
+    print_question "Choose database type:"
+    echo "1) MongoDB (recommended for production)"
+    echo "2) JSON file (simple, good for testing)"
+    read -p "Enter choice (1-2): " DB_CHOICE
+    
+    case $DB_CHOICE in
+        1)
+            DATABASE_TYPE="mongodb"
+            print_question "MongoDB URI (default: mongodb://localhost:27017):"
+            read MONGODB_URI
+            MONGODB_URI=${MONGODB_URI:-mongodb://localhost:27017}
+            DATABASE_URL=$MONGODB_URI
+            ;;
+        2)
+            DATABASE_TYPE="json"
+            DATABASE_URL="data/database.json"
+            ;;
+        *)
+            print_warning "Invalid choice, defaulting to JSON database"
+            DATABASE_TYPE="json"
+            DATABASE_URL="data/database.json"
+            ;;
+    esac
+    
+    # Lavalink Configuration
+    echo ""
+    print_status "Lavalink Configuration"
+    print_question "Lavalink host (default: localhost):"
+    read LAVALINK_HOST
+    LAVALINK_HOST=${LAVALINK_HOST:-localhost}
+    
+    print_question "Lavalink port (default: 2333):"
+    read LAVALINK_PORT
+    LAVALINK_PORT=${LAVALINK_PORT:-2333}
+    
+    print_question "Lavalink password (default: youshallnotpass):"
+    read LAVALINK_PASSWORD
+    LAVALINK_PASSWORD=${LAVALINK_PASSWORD:-youshallnotpass}
+    
+    # Redis Configuration (for clustering)
+    echo ""
+    print_status "Redis Configuration (for node clustering)"
+    print_question "Enable Redis clustering? (y/N):"
+    read ENABLE_REDIS
+    
+    if [[ $ENABLE_REDIS =~ ^[Yy]$ ]]; then
+        print_question "Redis host (default: localhost):"
+        read REDIS_HOST
+        REDIS_HOST=${REDIS_HOST:-localhost}
+        
+        print_question "Redis port (default: 6379):"
+        read REDIS_PORT
+        REDIS_PORT=${REDIS_PORT:-6379}
+        
+        print_question "Redis password (optional):"
+        read REDIS_PASSWORD
+    else
+        REDIS_HOST="localhost"
+        REDIS_PORT="6379"
+        REDIS_PASSWORD=""
+    fi
+    
+    # Web API Configuration
+    echo ""
+    print_status "Web API Configuration"
+    print_question "Enable web API for configuration? (y/N):"
+    read ENABLE_WEB_API
+    
+    if [[ $ENABLE_WEB_API =~ ^[Yy]$ ]]; then
+        WEB_API_ENABLED="true"
+        
+        print_question "Web API port (default: 8080):"
+        read WEB_PORT
+        WEB_PORT=${WEB_PORT:-8080}
+        
+        print_question "Web API secret key (will be generated if empty):"
+        read WEB_SECRET_KEY
+        if [[ -z $WEB_SECRET_KEY ]]; then
+            WEB_SECRET_KEY=$(openssl rand -base64 32 2>/dev/null || echo "generated_secret_key_$(date +%s)")
+        fi
+    else
+        WEB_API_ENABLED="false"
+        WEB_PORT="8080"
+        WEB_SECRET_KEY=""
+    fi
+    
+    # Sharding Configuration
+    echo ""
+    print_status "Sharding Configuration"
+    print_question "Enable automatic sharding? (y/N):"
+    read ENABLE_SHARDING
+    
+    if [[ $ENABLE_SHARDING =~ ^[Yy]$ ]]; then
+        SHARDING_ENABLED="true"
+        
+        print_question "Manual shard count (leave empty for auto-detection):"
+        read SHARD_COUNT
+    else
+        SHARDING_ENABLED="false"
+        SHARD_COUNT=""
+    fi
+    
+    # Node Configuration
+    echo ""
+    print_status "Node/Cluster Configuration"
+    print_question "Node ID (default: node-1):"
+    read NODE_ID
+    NODE_ID=${NODE_ID:-node-1}
+    
+    print_question "Is this the primary node? (Y/n):"
+    read IS_PRIMARY
+    if [[ $IS_PRIMARY =~ ^[Nn]$ ]]; then
+        IS_PRIMARY_NODE="false"
+    else
+        IS_PRIMARY_NODE="true"
+    fi
+}
+
+# Continue with remaining functions...
+source ./install_functions.sh 2>/dev/null || true
+
+# Main installation flow
+main() {
+    print_header
+    
+    # Pre-installation checks
+    check_root
+    detect_os
+    check_sudo
+    
+    # Interactive configuration
+    interactive_config
+    
+    echo ""
+    print_status "Starting installation with your configuration..."
+    echo ""
+    
+    # System updates and package installation
+    update_system
+    install_python
+    install_java
+    
+    # Database installation based on choice
+    if [[ $DATABASE_TYPE == "mongodb" ]]; then
+        install_mongodb
+    fi
+    
+    # Redis installation if enabled
+    if [[ $ENABLE_REDIS =~ ^[Yy]$ ]]; then
+        install_redis
+    fi
+    
+    # Download Lavalink
+    download_lavalink
+    
+    # Python environment setup
+    create_venv
+    install_python_deps
+    
+    # Create directories and files
+    mkdir -p logs data cogs core database web static templates
+    
+    # Create .env file
     cat > .env << EOF
 # Discord Bot Configuration
-DISCORD_TOKEN=your_discord_token_here
-GUILD_ID=your_guild_id_here
+DISCORD_TOKEN=$DISCORD_TOKEN
+GUILD_ID=$GUILD_ID
+PREFIX=$BOT_PREFIX
+EMBED_COLOR=0x7289da
 
 # Database Configuration
-DATABASE_URL=postgresql://ratbot:$DB_PASSWORD@localhost/ratbot
+DATABASE_TYPE=$DATABASE_TYPE
+MONGODB_URI=$DATABASE_URL
+DATABASE_NAME=discord_bot
+JSON_DATABASE_PATH=data/database.json
 
 # Lavalink Configuration
-LAVALINK_HOST=localhost
-LAVALINK_PORT=2333
-LAVALINK_PASSWORD=youshallnotpass
+LAVALINK_HOST=$LAVALINK_HOST
+LAVALINK_PORT=$LAVALINK_PORT
+LAVALINK_PASSWORD=$LAVALINK_PASSWORD
+LAVALINK_SSL=false
 
-# Bot Configuration
-PREFIX=!
-EMBED_COLOR=0x00ff00
+# Redis Configuration
+REDIS_HOST=$REDIS_HOST
+REDIS_PORT=$REDIS_PORT
+REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_DB=0
+
+# Web API Configuration
+WEB_API_ENABLED=$WEB_API_ENABLED
+WEB_HOST=0.0.0.0
+WEB_PORT=$WEB_PORT
+WEB_SECRET_KEY=$WEB_SECRET_KEY
+CORS_ORIGINS=*
+
+# Sharding Configuration
+SHARDING_ENABLED=$SHARDING_ENABLED
+SHARD_COUNT=$SHARD_COUNT
+AUTO_SHARD=true
+
+# Node Configuration
+NODE_ID=$NODE_ID
+CLUSTER_NAME=discord-bot-cluster
+IS_PRIMARY_NODE=$IS_PRIMARY_NODE
+NODE_HEARTBEAT=30
 
 # Logging Configuration
 LOG_LEVEL=INFO
+LOG_FILE=logs/bot.log
 
-# ModLog Configuration
-MODLOG_CHANNEL_ID=your_modlog_channel_id_here
+# Owner Configuration (comma-separated user IDs)
+OWNER_IDS=
 EOF
     
-    print_success "Database credentials added to .env file"
-    print_warning "Database password: $DB_PASSWORD (saved in .env file)"
+    # Create management scripts
+    cat > start.sh << 'EOF'
+#!/bin/bash
+source venv/bin/activate
+python main.py
+EOF
+    chmod +x start.sh
     
-    # Test database connection
-    print_status "Testing database connection..."
-    if python3 -c "
-import asyncpg
+    cat > update.sh << 'EOF'
+#!/bin/bash
+echo "Updating Discord Bot..."
+git stash
+git pull origin main
+source venv/bin/activate
+pip install --upgrade -r requirements.txt
+echo "Update completed!"
+EOF
+    chmod +x update.sh
+    
+    cat > stop.sh << 'EOF'
+#!/bin/bash
+echo "Stopping Discord Bot..."
+pkill -f "python main.py" || echo "Bot not running"
+pkill -f "java.*Lavalink.jar" || echo "Lavalink not running"
+echo "Stopped"
+EOF
+    chmod +x stop.sh
+    
+    # Create main.py if it doesn't exist
+    if [ ! -f "main.py" ]; then
+        cat > main.py << 'EOF'
+#!/usr/bin/env python3
+
 import asyncio
-import os
-from dotenv import load_dotenv
+import sys
+from loguru import logger
+from core import create_bot
+from config import config
 
-load_dotenv()
-
-async def test_db():
+async def main():
+    """Main function to run the bot"""
+    
+    # Validate configuration
+    errors = config.validate()
+    if errors:
+        logger.error("Configuration errors found:")
+        for error in errors:
+            logger.error(f"  - {error}")
+        sys.exit(1)
+    
+    # Create and run bot
+    bot = create_bot()
+    
     try:
-        conn = await asyncpg.connect(os.getenv('DATABASE_URL'))
-        await conn.close()
-        print('✅ Database connection successful!')
+        logger.info("Starting Advanced Discord Bot...")
+        await bot.start(config.token)
+    except KeyboardInterrupt:
+        logger.info("Bot interrupted by user")
     except Exception as e:
-        print(f'❌ Database connection failed: {e}')
-        exit(1)
+        logger.error(f"Bot crashed: {e}")
+        sys.exit(1)
+    finally:
+        if not bot.is_closed():
+            await bot.close()
 
-asyncio.run(test_db())
-" 2>/dev/null; then
-        print_success "Database connection test passed"
-    else
-        print_warning "Database connection test failed - you may need to configure PostgreSQL manually"
+if __name__ == "__main__":
+    asyncio.run(main())
+EOF
     fi
     
-    return 0
+    # Final instructions
+    echo ""
+    print_success "🎉 Installation completed successfully!"
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║                        NEXT STEPS                            ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo "1. Review your configuration in .env file"
+    echo "2. Start the bot: ./start.sh"
+    echo "3. View logs: tail -f logs/bot.log"
+    echo "4. Update the bot: ./update.sh"
+    echo "5. Stop the bot: ./stop.sh"
+    echo ""
+    echo -e "${GREEN}🎵 Music Features:${NC}"
+    echo "• Regular search: !play song name (SoundCloud/Bandcamp)"
+    echo "• YouTube search: !play yt:song name (direct YouTube)"
+    echo "• Automatic fallback: YouTube failures auto-retry"
+    echo ""
+    echo -e "${CYAN}Your hybrid music bot is ready to run!${NC}"
+    echo ""
 }
 
-# Create virtual environment
-print_status "Creating virtual environment..."
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
-    print_success "Virtual environment created"
-else
-    print_status "Virtual environment already exists"
-fi
-
-# Activate virtual environment
-print_status "Activating virtual environment..."
-source venv/bin/activate
-
-# Upgrade pip
-print_status "Upgrading pip..."
-pip install --upgrade pip
-
-# Install system dependencies first
-print_status "Installing system dependencies..."
-if command -v apt-get &> /dev/null; then
-    # Ubuntu/Debian
-    print_status "Installing dependencies from system packages..."
-    sudo apt-get update
-    sudo apt-get install -y python3-yarl python3-aiohttp python3-asyncpg python3-dotenv python3-colorama python3-psutil python3-dev build-essential libssl-dev libffi-dev
-    print_success "System dependencies installed"
-elif command -v dnf &> /dev/null; then
-    # Fedora/RHEL
-    print_status "Installing dependencies from system packages..."
-    sudo dnf install -y python3-yarl python3-aiohttp python3-asyncpg python3-dotenv python3-colorama python3-psutil python3-devel openssl-devel libffi-devel
-    print_success "System dependencies installed"
-elif command -v pacman &> /dev/null; then
-    # Arch Linux
-    print_status "Installing dependencies from system packages..."
-    sudo pacman -S --noconfirm python-yarl python-aiohttp python-asyncpg python-dotenv python-colorama python-psutil base-devel
-    print_success "System dependencies installed"
-else
-    print_warning "Could not detect package manager, will try pip installation"
-fi
-
-# Install Python-only dependencies (discord.py and wavelink)
-print_status "Installing Python-only dependencies..."
-print_status "This may take a few minutes..."
-
-# Create a minimal requirements file with only pip packages
-print_status "Creating minimal requirements file..."
-cat > requirements_minimal.txt << EOF
-discord.py==2.3.2
-wavelink==2.6.4
-EOF
-
-# Install Python-only dependencies with better error handling
-if pip install -r requirements_minimal.txt; then
-    print_success "Python-only dependencies installed"
-else
-    print_warning "Some packages failed to install with pip, trying alternative method..."
-    
-    # Try installing with --no-cache-dir and --force-reinstall
-    if pip install --no-cache-dir --force-reinstall -r requirements_minimal.txt; then
-        print_success "Python-only dependencies installed with alternative method"
-    else
-        print_error "Failed to install Python-only dependencies"
-        print_status "Trying to install packages individually..."
-        
-        # Install packages individually
-        packages=("discord.py==2.3.2" "wavelink==2.6.4")
-        
-        for package in "${packages[@]}"; do
-            print_status "Installing $package..."
-            if pip install --no-cache-dir "$package"; then
-                print_success "Installed $package"
-            else
-                print_warning "Failed to install $package, continuing..."
-            fi
-        done
-        
-        print_success "Python-only dependency installation completed"
-    fi
-fi
-
-# Clean up temporary file
-rm -f requirements_minimal.txt
-
-# Verify all installations
-print_status "Verifying installations..."
-
-# Check yarl
-if python3 -c "import yarl; print('✅ yarl version:', yarl.__version__)" 2>/dev/null; then
-    print_success "yarl is installed and working"
-else
-    print_warning "yarl not found, attempting pip installation as fallback..."
-    pip install --no-cache-dir yarl==1.9.2 || print_warning "yarl installation failed, but continuing..."
-fi
-
-# Check aiohttp
-if python3 -c "import aiohttp; print('✅ aiohttp version:', aiohttp.__version__)" 2>/dev/null; then
-    print_success "aiohttp is installed and working"
-else
-    print_warning "aiohttp not found, attempting pip installation as fallback..."
-    pip install --no-cache-dir aiohttp==3.9.1 || print_warning "aiohttp installation failed, but continuing..."
-fi
-
-# Check asyncpg
-if python3 -c "import asyncpg; print('✅ asyncpg is installed')" 2>/dev/null; then
-    print_success "asyncpg is installed and working"
-else
-    print_warning "asyncpg not found, attempting pip installation as fallback..."
-    pip install --no-cache-dir asyncpg==0.29.0 || print_warning "asyncpg installation failed, but continuing..."
-fi
-
-# Check discord.py
-if python3 -c "import discord; print('✅ discord.py version:', discord.__version__)" 2>/dev/null; then
-    print_success "discord.py is installed and working"
-else
-    print_error "discord.py installation failed - this is critical!"
-fi
-
-# Check wavelink
-if python3 -c "import wavelink; print('✅ wavelink is installed')" 2>/dev/null; then
-    print_success "wavelink is installed and working"
-else
-    print_error "wavelink installation failed - this is critical!"
-fi
-
-# Download Lavalink if Java is available
-if command -v java &> /dev/null; then
-    print_status "Checking Lavalink..."
-    if [ ! -f "Lavalink.jar" ]; then
-        print_status "Downloading Lavalink..."
-        LAVALINK_VERSION="4.0.0"
-        LAVALINK_URL="https://github.com/lavalink-devs/Lavalink/releases/download/$LAVALINK_VERSION/Lavalink.jar"
-        
-        if command -v curl &> /dev/null; then
-            curl -L -o Lavalink.jar "$LAVALINK_URL"
-        elif command -v wget &> /dev/null; then
-            wget -O Lavalink.jar "$LAVALINK_URL"
-        else
-            print_error "Neither curl nor wget found. Please install one of them or download Lavalink.jar manually."
-            print_status "Download Lavalink from: https://github.com/lavalink-devs/Lavalink/releases"
-        fi
-        
-        if [ -f "Lavalink.jar" ]; then
-            print_success "Lavalink downloaded successfully"
-        fi
-    else
-        print_success "Lavalink.jar already exists"
-    fi
-else
-    print_warning "Java not found. Skipping Lavalink download."
-    print_status "Please install Java 11+ and run this script again to download Lavalink."
-fi
-
-# Create necessary directories
-print_status "Creating directories..."
-mkdir -p logs
-mkdir -p data
-print_success "Directories created"
-
-# Setup database
-print_status "Setting up database..."
-if setup_database; then
-    print_success "Database setup completed"
-else
-    print_warning "Database setup failed or skipped"
-    print_status "You may need to set up PostgreSQL manually"
-fi
-
-# Make scripts executable
-print_status "Making scripts executable..."
-chmod +x install.sh
-chmod +x update.sh
-chmod +x start.sh
-chmod +x stop.sh
-chmod +x troubleshoot.sh
-chmod +x setup_database.sh
-chmod +x install_psutil.sh
-print_success "Scripts made executable"
-
-# Final instructions
-print_success "Installation completed!"
-echo ""
-echo "✅ What was set up:"
-echo "   • Python virtual environment with all dependencies"
-echo "   • PostgreSQL database server (if supported)"
-echo "   • Database 'ratbot' with user 'ratbot'"
-echo "   • Lavalink music server (if Java is available)"
-echo "   • Configuration files (.env)"
-echo "   • All management scripts"
-echo ""
-echo "📝 Next steps:"
-echo "1. Edit .env file with your Discord bot token and other settings"
-echo "2. Run './start.sh' to start the bot"
-echo "3. Use './stop.sh' to stop the bot"
-echo "4. Use './update.sh' to update the bot from GitHub"
-echo ""
-echo "🔧 Database Info:"
-echo "   • Database: ratbot"
-echo "   • User: ratbot"
-echo "   • Password: (saved in .env file)"
-echo "   • Connection: PostgreSQL will start automatically"
-echo ""
-echo "For help, check the README.md file or run './start.sh --help'" 
+# Run main function
+main "$@"

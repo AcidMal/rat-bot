@@ -1,7 +1,3 @@
-# Environment variables
-.env
-.env.backup
-
 # Python
 __pycache__/
 *.py[cod]
@@ -25,10 +21,41 @@ wheels/
 *.egg
 MANIFEST
 
-# Virtual environment
+# Virtual Environment
 venv/
 env/
 ENV/
+.venv/
+.env/
+
+# Environment Variables
+.env
+.env.local
+.env.production
+
+# Database
+*.db
+*.sqlite3
+data/
+database.json
+
+# Logs
+logs/
+*.log
+lavalink.log
+
+# Lavalink
+Lavalink.jar
+application.yml.backup
+
+# Backups
+backups/
+*.backup
+
+# Temporary files
+tmp/
+temp/
+.tmp/
 
 # IDE
 .vscode/
@@ -37,35 +64,39 @@ ENV/
 *.swo
 *~
 
-# Logs
-logs/
-*.log
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Lavalink
-Lavalink.jar
-lavalink.pid
-
-# Bot process
-bot.pid
-
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# Temporary files
-*.tmp
-*.temp
-*.bak
+# Node modules (if using Node.js tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Data files
-data/
-*.data
+# Bot specific
+bot.pid
+lavalink.pid
+.last_backup
+.has_stashed_changes
 
-# Backup files
-*.backup
-*.old 
+# Service files
+*.service
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+
+# Config backups
+config.backup
+*.yml.backup
+
+# Test files
+test_*
+*_test.py
