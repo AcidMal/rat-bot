@@ -48,10 +48,17 @@ class MusicPlayer(wavelink.Player):
         if db and hasattr(self, 'guild') and self.guild:
             logger.info(f"Initializing DatabaseQueue for guild {self.guild.id}")
             old_queue_type = type(self.queue).__name__
-            self.queue = DatabaseQueue(self.guild.id, db)
-            logger.info(f"Queue changed from {old_queue_type} to {type(self.queue).__name__}")
+            
+            # Keep the original wavelink queue for internal operations
+            self._wavelink_queue = self.queue
+            # Add our database queue for persistence
+            self._db_queue = DatabaseQueue(self.guild.id, db)
+            
+            logger.info(f"Initialized hybrid queue system: {old_queue_type} + DatabaseQueue")
         else:
             logger.warning("Could not initialize DatabaseQueue - using wavelink.Queue fallback")
+            self._wavelink_queue = self.queue
+            self._db_queue = None
 
 class Music(commands.Cog):
     """Advanced music system with queue management, filters, and more"""
@@ -65,14 +72,27 @@ class Music(commands.Cog):
         return guild.voice_client if isinstance(guild.voice_client, MusicPlayer) else None
     
     async def _add_to_queue(self, player: MusicPlayer, track: wavelink.Playable):
-        """Helper method to add track to queue with proper method detection"""
-        if hasattr(player.queue, 'put_wait'):
-            await player.queue.put_wait(track)
-        elif hasattr(player.queue, 'put'):
-            await player.queue.put(track)
-        else:
-            logger.error(f"Queue object {type(player.queue)} has no put method")
-            raise AttributeError(f"Queue object {type(player.queue)} has no put method")
+        """Helper method to add track to both wavelink and database queues"""
+        # Add to wavelink queue for internal operations
+        if hasattr(player, '_wavelink_queue'):
+            if hasattr(player._wavelink_queue, 'put_wait'):
+                await player._wavelink_queue.put_wait(track)
+            elif hasattr(player._wavelink_queue, 'put'):
+                await player._wavelink_queue.put(track)
+        
+        # Add to database queue for persistence
+        if hasattr(player, '_db_queue') and player._db_queue:
+            await player._db_queue.put_wait(track)
+        
+        # Fallback to original queue if hybrid system not set up
+        if not hasattr(player, '_wavelink_queue'):
+            if hasattr(player.queue, 'put_wait'):
+                await player.queue.put_wait(track)
+            elif hasattr(player.queue, 'put'):
+                await player.queue.put(track)
+            else:
+                logger.error(f"Queue object {type(player.queue)} has no put method")
+                raise AttributeError(f"Queue object {type(player.queue)} has no put method")
     
     async def connect_player(self, channel: discord.VoiceChannel) -> MusicPlayer:
         """Connect to a voice channel and return the player"""
@@ -545,6 +565,7 @@ class Music(commands.Cog):
                 
                 # Play the track with YouTube fallback handling
                 try:
+                    logger.info(f"About to play track. Player type: {type(player)}, Queue type: {type(player.queue)}")
                     await player.play(track)
                     logger.info(f"Started playing track: {track.title} from {track.source}")
                     logger.info(f"Voice channel: {ctx.voice_client.channel.name}")
@@ -700,20 +721,19 @@ class Music(commands.Cog):
         if not player:
             return await ctx.send("❌ Not connected to voice")
         
-        # Check if queue is empty
-        if hasattr(player.queue, 'get_is_empty'):
+        # Check if queue is empty (prioritize database queue)
+        if hasattr(player, '_db_queue') and player._db_queue:
+            queue_is_empty = await player._db_queue.get_is_empty()
+            queue_size = await player._db_queue.get_count()
+        elif hasattr(player.queue, 'get_is_empty'):
             queue_is_empty = await player.queue.get_is_empty()
+            queue_size = await player.queue.get_count()
         else:
             queue_is_empty = player.queue.is_empty
+            queue_size = player.queue.count
         
         if queue_is_empty and not player.playing:
             return await ctx.send("📭 Queue is empty")
-        
-        # Get queue size for pagination
-        if hasattr(player.queue, 'get_count'):
-            queue_size = await player.queue.get_count()
-        else:
-            queue_size = player.queue.count
         
         # Paginate queue
         per_page = 10
@@ -742,8 +762,14 @@ class Music(commands.Cog):
         if not queue_is_empty:
             queue_list = []
             
-            # Get queue preview for display
-            if hasattr(player.queue, 'get_preview'):
+            # Get queue preview for display (prioritize database queue)
+            if hasattr(player, '_db_queue') and player._db_queue:
+                queue_preview = await player._db_queue.get_preview(per_page)
+                for i, track_data in enumerate(queue_preview[start:end], start + 1):
+                    duration = self._format_time(track_data.get('length', 0))
+                    requester_name = track_data.get('requester_name', 'Unknown')
+                    queue_list.append(f"`{i}.` **[{track_data['title']}]({track_data['uri']})** `{duration}` - {requester_name}")
+            elif hasattr(player.queue, 'get_preview'):
                 queue_preview = await player.queue.get_preview(per_page)
                 for i, track_data in enumerate(queue_preview[start:end], start + 1):
                     duration = self._format_time(track_data.get('length', 0))
@@ -1233,23 +1259,41 @@ class Music(commands.Cog):
         player.skip_votes.clear()
         
         # Play next track
-        if hasattr(player.queue, 'get_is_empty'):
+        # Check database queue first, then wavelink queue
+        queue_is_empty = True
+        if hasattr(player, '_db_queue') and player._db_queue:
+            queue_is_empty = await player._db_queue.get_is_empty()
+        elif hasattr(player.queue, 'get_is_empty'):
             queue_is_empty = await player.queue.get_is_empty()
         else:
             queue_is_empty = player.queue.is_empty
         
         if not queue_is_empty:
             try:
-                if hasattr(player.queue, 'get_count'):
+                # Get queue size
+                if hasattr(player, '_db_queue') and player._db_queue:
+                    queue_size = await player._db_queue.get_count()
+                elif hasattr(player.queue, 'get_count'):
                     queue_size = await player.queue.get_count()
                 else:
                     queue_size = player.queue.count
                 logger.info(f"Queue before getting next track: {queue_size} tracks")
                 
-                next_track = await player.queue.get_wait()
+                # Get next track from database queue if available, otherwise wavelink queue
+                if hasattr(player, '_db_queue') and player._db_queue:
+                    next_track = await player._db_queue.get_wait()
+                    # Also remove from wavelink queue to keep in sync
+                    if hasattr(player, '_wavelink_queue') and not player._wavelink_queue.is_empty:
+                        await player._wavelink_queue.get_wait()
+                else:
+                    next_track = await player.queue.get_wait()
+                    
                 logger.info(f"Got next track from queue: {next_track.title} (Source: {next_track.source})")
                 
-                if hasattr(player.queue, 'get_count'):
+                # Get updated queue size
+                if hasattr(player, '_db_queue') and player._db_queue:
+                    queue_size_after = await player._db_queue.get_count()
+                elif hasattr(player.queue, 'get_count'):
                     queue_size_after = await player.queue.get_count()
                 else:
                     queue_size_after = player.queue.count

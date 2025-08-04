@@ -24,6 +24,9 @@ class DatabaseQueue:
         self.loop_mode = "none"  # Add loop_mode for compatibility
         self._cached_size = 0
         self._cached_empty = True
+        
+        # Additional wavelink.Queue compatibility
+        self._queue = []  # Internal queue representation for wavelink compatibility
     
     async def put_wait(self, track: wavelink.Playable) -> None:
         """Add a track to the queue"""
