@@ -50,6 +50,10 @@ class DatabaseQueue:
             self._cached_empty = False
             self._cache_valid = False
     
+    async def put(self, track: wavelink.Playable) -> None:
+        """Add a track to the queue (alias for put_wait for compatibility)"""
+        await self.put_wait(track)
+    
     async def get_wait(self) -> Optional[wavelink.Playable]:
         """Get the next track from the queue"""
         async with self._lock:

@@ -47,7 +47,9 @@ class MusicPlayer(wavelink.Player):
         self.db = db
         if db and hasattr(self, 'guild') and self.guild:
             logger.info(f"Initializing DatabaseQueue for guild {self.guild.id}")
+            old_queue_type = type(self.queue).__name__
             self.queue = DatabaseQueue(self.guild.id, db)
+            logger.info(f"Queue changed from {old_queue_type} to {type(self.queue).__name__}")
         else:
             logger.warning("Could not initialize DatabaseQueue - using wavelink.Queue fallback")
 
@@ -61,6 +63,16 @@ class Music(commands.Cog):
     def get_player(self, guild: discord.Guild) -> Optional[MusicPlayer]:
         """Get the music player for a guild"""
         return guild.voice_client if isinstance(guild.voice_client, MusicPlayer) else None
+    
+    async def _add_to_queue(self, player: MusicPlayer, track: wavelink.Playable):
+        """Helper method to add track to queue with proper method detection"""
+        if hasattr(player.queue, 'put_wait'):
+            await player.queue.put_wait(track)
+        elif hasattr(player.queue, 'put'):
+            await player.queue.put(track)
+        else:
+            logger.error(f"Queue object {type(player.queue)} has no put method")
+            raise AttributeError(f"Queue object {type(player.queue)} has no put method")
     
     async def connect_player(self, channel: discord.VoiceChannel) -> MusicPlayer:
         """Connect to a voice channel and return the player"""
@@ -500,11 +512,12 @@ class Music(commands.Cog):
         
         logger.info(f"Handling single track: {track.title} (URI: {track.uri[:50]}...)")
         logger.info(f"Player currently playing: {player.playing}")
+        logger.info(f"Queue type: {type(player.queue)}")
         logger.info(f"Current queue size: {player.queue.count}")
         
         if player.playing:
             # Add to queue
-            await player.queue.put_wait(track)
+            await self._add_to_queue(player, track)
             logger.info(f"Added track to queue: {track.title} (Position: {player.queue.count})")
             
             embed = discord.Embed(
@@ -607,7 +620,7 @@ class Music(commands.Cog):
             if not player.playing and added == 0:
                 await player.play(track)
             else:
-                await player.queue.put_wait(track)
+                await self._add_to_queue(player, track)
             added += 1
         
         embed = discord.Embed(
@@ -938,7 +951,7 @@ class Music(commands.Cog):
                         await player.play(track)
                         await ctx.send(f"🎵 Playing: {track.title}")
                     else:
-                        await player.queue.put_wait(track)
+                        await self._add_to_queue(player, track)
                         await ctx.send(f"📝 Queued #{player.queue.count}: {track.title}")
                     
                     logger.info(f"Test queue - Added track {i+1}: {track.title} (URI: {track.uri})")
@@ -1298,7 +1311,7 @@ class Music(commands.Cog):
             logger.info("Restarting queue loop")
             # Restart queue
             for track in reversed(player.history):
-                await player.queue.put_wait(track)
+                await self._add_to_queue(player, track)
                 
             if hasattr(player.queue, 'get_is_empty'):
                 queue_is_empty = await player.queue.get_is_empty()
