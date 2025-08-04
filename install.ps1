@@ -111,7 +111,7 @@ python -m pip install --upgrade pip
 if (Test-Path "requirements.txt") {
     pip install -r requirements.txt
 } else {
-    pip install discord.py wavelink motor pymongo fastapi uvicorn loguru aioredis psutil colorama python-dotenv aiofiles aiohttp yt-dlp cryptography pydantic
+    pip install discord.py wavelink motor pymongo fastapi uvicorn loguru aioredis psutil colorama python-dotenv aiofiles aiohttp yt-dlp cryptography pydantic PyNaCl
 }
 Write-Host "[SUCCESS] Dependencies installed" -ForegroundColor Green
 
