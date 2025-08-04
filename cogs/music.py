@@ -41,6 +41,10 @@ class MusicPlayer(wavelink.Player):
         self.tracks_played = 0
         self.total_playtime = 0
         self.session_start = datetime.now(timezone.utc)
+        
+        # Concurrency control
+        self._processing_next_track = False
+        self._track_lock = asyncio.Lock()
     
     def set_database(self, db):
         """Set the database and initialize DatabaseQueue"""
@@ -1258,129 +1262,151 @@ class Music(commands.Cog):
         # Clear skip votes
         player.skip_votes.clear()
         
-        # Play next track
-        # Check database queue first, then wavelink queue
-        queue_is_empty = True
-        if hasattr(player, '_db_queue') and player._db_queue:
-            queue_is_empty = await player._db_queue.get_is_empty()
-        elif hasattr(player.queue, 'get_is_empty'):
-            queue_is_empty = await player.queue.get_is_empty()
-        else:
-            queue_is_empty = player.queue.is_empty
-        
-        if not queue_is_empty:
+        # Play next track with concurrency control
+        async with player._track_lock:
+            if player._processing_next_track:
+                logger.info("Already processing next track, skipping...")
+                return
+            
+            player._processing_next_track = True
+            
             try:
-                # Get queue size
+                # Check database queue first, then wavelink queue
+                queue_is_empty = True
                 if hasattr(player, '_db_queue') and player._db_queue:
-                    queue_size = await player._db_queue.get_count()
-                elif hasattr(player.queue, 'get_count'):
-                    queue_size = await player.queue.get_count()
-                else:
-                    queue_size = player.queue.count
-                logger.info(f"Queue before getting next track: {queue_size} tracks")
-                
-                # Get next track from database queue if available, otherwise wavelink queue
-                if hasattr(player, '_db_queue') and player._db_queue:
-                    next_track = await player._db_queue.get_wait()
-                    # Also remove from wavelink queue to keep in sync
-                    if hasattr(player, '_wavelink_queue') and not player._wavelink_queue.is_empty:
-                        await player._wavelink_queue.get_wait()
-                else:
-                    next_track = await player.queue.get_wait()
-                    
-                logger.info(f"Got next track from queue: {next_track.title} (Source: {next_track.source})")
-                
-                # Get updated queue size
-                if hasattr(player, '_db_queue') and player._db_queue:
-                    queue_size_after = await player._db_queue.get_count()
-                elif hasattr(player.queue, 'get_count'):
-                    queue_size_after = await player.queue.get_count()
-                else:
-                    queue_size_after = player.queue.count
-                logger.info(f"Queue after getting next track: {queue_size_after} tracks")
-                
-                # Handle YouTube fallback for queued tracks
-                if next_track.source == "youtube":
-                    try:
-                        await player.play(next_track)
-                        # Check if it actually started playing
-                        await asyncio.sleep(2)
-                        if not player.playing and not player.paused:
-                            logger.warning("Queued YouTube track failed, attempting fallback...")
-                            # Find the channel for fallback
-                            channel = player.channel
-                            if channel and hasattr(channel, 'guild'):
-                                # Create a mock context for fallback
-                                class MockContext:
-                                    def __init__(self, channel, author):
-                                        self.channel = channel
-                                        self.author = author
-                                        self.send = channel.send
-                                
-                                mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
-                                await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
-                                return
-                    except Exception as e:
-                        logger.warning(f"Queued YouTube track failed: {e}, attempting fallback...")
-                        channel = player.channel
-                        if channel and hasattr(channel, 'guild'):
-                            class MockContext:
-                                def __init__(self, channel, author):
-                                    self.channel = channel
-                                    self.author = author
-                                    self.send = channel.send
-                            
-                            mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
-                            await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
-                            return
-                else:
-                    await player.play(next_track)
-                    
-            except Exception as e:
-                logger.error(f"Error playing next track: {e}")
-                # Try to continue with the next track if available
-                if hasattr(player.queue, 'get_is_empty'):
+                    queue_is_empty = await player._db_queue.get_is_empty()
+                elif hasattr(player.queue, 'get_is_empty'):
                     queue_is_empty = await player.queue.get_is_empty()
                 else:
                     queue_is_empty = player.queue.is_empty
-                    
+                
                 if not queue_is_empty:
                     try:
-                        next_track = await player.queue.get_wait()
-                        await player.play(next_track)
-                    except Exception as e2:
-                        logger.error(f"Failed to play backup track: {e2}")
+                        # Get queue size
+                        if hasattr(player, '_db_queue') and player._db_queue:
+                            queue_size = await player._db_queue.get_count()
+                        elif hasattr(player.queue, 'get_count'):
+                            queue_size = await player.queue.get_count()
+                        else:
+                            queue_size = player.queue.count
+                        logger.info(f"Queue before getting next track: {queue_size} tracks")
                         
-        elif player.loop_mode == "queue" and player.history:
-            logger.info("Restarting queue loop")
-            # Restart queue
-            for track in reversed(player.history):
-                await self._add_to_queue(player, track)
-                
-            if hasattr(player.queue, 'get_is_empty'):
-                queue_is_empty = await player.queue.get_is_empty()
-            else:
-                queue_is_empty = player.queue.is_empty
-                
-            if not queue_is_empty:
-                next_track = await player.queue.get_wait()
-                await player.play(next_track)
-        elif player.auto_play and payload.track:
-            logger.info("Attempting auto-play")
-            # Auto-play similar tracks (if supported)
-            try:
-                recommended = await wavelink.Playable.search(f"scsearch:{payload.track.title}")
-                if not recommended:
-                    recommended = await wavelink.Playable.search(f"bcsearch:{payload.track.title}")
+                        # Get next track from database queue if available, otherwise wavelink queue
+                        if hasattr(player, '_db_queue') and player._db_queue:
+                            next_track = await player._db_queue.get_wait()
+                            # Also remove from wavelink queue to keep in sync
+                            if hasattr(player, '_wavelink_queue') and not player._wavelink_queue.is_empty:
+                                await player._wavelink_queue.get_wait()
+                        else:
+                            next_track = await player.queue.get_wait()
+                            
+                        logger.info(f"Got next track from queue: {next_track.title} (Source: {next_track.source})")
+                        
+                        # Get updated queue size
+                        if hasattr(player, '_db_queue') and player._db_queue:
+                            queue_size_after = await player._db_queue.get_count()
+                        elif hasattr(player.queue, 'get_count'):
+                            queue_size_after = await player.queue.get_count()
+                        else:
+                            queue_size_after = player.queue.count
+                        logger.info(f"Queue after getting next track: {queue_size_after} tracks")
+                        
+                        # Handle YouTube fallback for queued tracks
+                        if next_track.source == "youtube":
+                            try:
+                                await player.play(next_track)
+                                # Check if it actually started playing
+                                await asyncio.sleep(2)
+                                if not player.playing and not player.paused:
+                                    logger.warning("Queued YouTube track failed, attempting fallback...")
+                                    # Find the channel for fallback
+                                    channel = player.channel
+                                    if channel and hasattr(channel, 'guild'):
+                                        # Create a mock context for fallback
+                                        class MockContext:
+                                            def __init__(self, channel, author):
+                                                self.channel = channel
+                                                self.author = author
+                                                self.send = channel.send
+                                        
+                                        mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
+                                        await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
+                                        return
+                            except Exception as e:
+                                logger.warning(f"Queued YouTube track failed: {e}, attempting fallback...")
+                                channel = player.channel
+                                if channel and hasattr(channel, 'guild'):
+                                    class MockContext:
+                                        def __init__(self, channel, author):
+                                            self.channel = channel
+                                            self.author = author
+                                            self.send = channel.send
+                                    
+                                    mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
+                                    await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
+                                    return
+                        else:
+                            await player.play(next_track)
                     
-                if recommended and len(recommended) > 1:
-                    next_track = recommended[1]  # Skip the same track
-                    next_track.requester = payload.track.requester if hasattr(payload.track, 'requester') else None
-                    await player.play(next_track)
-            except Exception as e:
-                logger.warning(f"Auto-play failed: {e}")
-        else:
-            logger.info("No more tracks to play, queue is empty")
+                    except Exception as e:
+                        logger.error(f"Error playing next track: {e}")
+                        # Try to continue with the next track if available
+                        if hasattr(player, '_db_queue') and player._db_queue:
+                            queue_is_empty = await player._db_queue.get_is_empty()
+                        elif hasattr(player.queue, 'get_is_empty'):
+                            queue_is_empty = await player.queue.get_is_empty()
+                        else:
+                            queue_is_empty = player.queue.is_empty
+                            
+                        if not queue_is_empty:
+                            try:
+                                if hasattr(player, '_db_queue') and player._db_queue:
+                                    next_track = await player._db_queue.get_wait()
+                                else:
+                                    next_track = await player.queue.get_wait()
+                                await player.play(next_track)
+                            except Exception as e2:
+                                logger.error(f"Failed to play backup track: {e2}")
+                                
+                elif player.loop_mode == "queue" and player.history:
+                    logger.info("Restarting queue loop")
+                    # Restart queue
+                    for track in reversed(player.history):
+                        await self._add_to_queue(player, track)
+                        
+                    if hasattr(player, '_db_queue') and player._db_queue:
+                        queue_is_empty = await player._db_queue.get_is_empty()
+                    elif hasattr(player.queue, 'get_is_empty'):
+                        queue_is_empty = await player.queue.get_is_empty()
+                    else:
+                        queue_is_empty = player.queue.is_empty
+                        
+                    if not queue_is_empty:
+                        if hasattr(player, '_db_queue') and player._db_queue:
+                            next_track = await player._db_queue.get_wait()
+                        else:
+                            next_track = await player.queue.get_wait()
+                        await player.play(next_track)
+                elif player.auto_play and payload.track:
+                    logger.info("Attempting auto-play")
+                    # Auto-play similar tracks (if supported)
+                    try:
+                        recommended = await wavelink.Playable.search(f"scsearch:{payload.track.title}")
+                        if not recommended:
+                            recommended = await wavelink.Playable.search(f"bcsearch:{payload.track.title}")
+                            
+                        if recommended and len(recommended) > 1:
+                            next_track = recommended[1]  # Skip the same track
+                            next_track.requester = payload.track.requester if hasattr(payload.track, 'requester') else None
+                            await player.play(next_track)
+                    except Exception as e:
+                        logger.warning(f"Auto-play failed: {e}")
+                else:
+                    logger.info("No more tracks to play, queue is empty")
+            
+            finally:
+                # Always reset the processing flag
+                player._processing_next_track = False
     
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
