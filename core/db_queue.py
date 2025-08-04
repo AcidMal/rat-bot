@@ -81,31 +81,25 @@ class DatabaseQueue:
                 logger.error(f"Error converting track data to Playable: {e}")
                 return None
     
-    @property
-    async def count(self) -> int:
-        """Get the current queue size"""
+    async def get_count(self) -> int:
+        """Get the current queue size (async method)"""
         return await self.db.get_queue_size(self.guild_id)
     
     @property
     def count(self) -> int:
         """Synchronous count property (for compatibility)"""
         # This is a hack for compatibility with existing code
-        # We'll need to use async count in practice
+        # We'll need to use async get_count() in practice
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Create a task to get the count
-                task = asyncio.create_task(self.db.get_queue_size(self.guild_id))
-                # This is not ideal, but needed for sync property
-                return 0  # Return 0 for now, actual count will be logged
-            else:
-                return loop.run_until_complete(self.db.get_queue_size(self.guild_id))
+            # Return cached size if available
+            if hasattr(self, '_cached_size'):
+                return self._cached_size
+            return 0  # Default to 0, actual count should use get_count()
         except Exception:
             return 0
     
-    @property
-    async def is_empty(self) -> bool:
-        """Check if the queue is empty"""
+    async def get_is_empty(self) -> bool:
+        """Check if the queue is empty (async method)"""
         size = await self.db.get_queue_size(self.guild_id)
         return size == 0
     
@@ -113,12 +107,10 @@ class DatabaseQueue:
     def is_empty(self) -> bool:
         """Synchronous is_empty property (for compatibility)"""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return False  # Assume not empty for safety
-            else:
-                size = loop.run_until_complete(self.db.get_queue_size(self.guild_id))
-                return size == 0
+            # Return cached status if available
+            if hasattr(self, '_cached_empty'):
+                return self._cached_empty
+            return True  # Default to empty, actual status should use get_is_empty()
         except Exception:
             return True
     

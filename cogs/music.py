@@ -14,15 +14,13 @@ class MusicPlayer(wavelink.Player):
     """Enhanced music player with advanced features"""
     
     def __init__(self, *args, **kwargs):
-        # Extract database from kwargs
-        self.db = kwargs.pop('db', None)
         super().__init__(*args, **kwargs)
         
-        # Queue management - use database queue if available
-        if self.db and hasattr(self, 'guild') and self.guild:
-            self.queue = DatabaseQueue(self.guild.id, self.db)
-        else:
-            self.queue = wavelink.Queue()  # Fallback to wavelink queue
+        # Database will be set after initialization
+        self.db = None
+        
+        # Start with wavelink queue, will be replaced with DatabaseQueue when db is set
+        self.queue = wavelink.Queue()
         
         self.history = []
         self.loop_mode = "none"  # none, track, queue
@@ -43,6 +41,15 @@ class MusicPlayer(wavelink.Player):
         self.tracks_played = 0
         self.total_playtime = 0
         self.session_start = datetime.now(timezone.utc)
+    
+    def set_database(self, db):
+        """Set the database and initialize DatabaseQueue"""
+        self.db = db
+        if db and hasattr(self, 'guild') and self.guild:
+            logger.info(f"Initializing DatabaseQueue for guild {self.guild.id}")
+            self.queue = DatabaseQueue(self.guild.id, db)
+        else:
+            logger.warning("Could not initialize DatabaseQueue - using wavelink.Queue fallback")
 
 class Music(commands.Cog):
     """Advanced music system with queue management, filters, and more"""
@@ -62,13 +69,17 @@ class Music(commands.Cog):
             if channel.guild.voice_client:
                 await channel.guild.voice_client.disconnect(force=True)
             
-            # Connect with timeout and retry, passing database
+            # Connect with timeout and retry
             player = await channel.connect(
                 cls=MusicPlayer, 
                 timeout=30.0, 
-                reconnect=True,
-                db=self.bot.db
+                reconnect=True
             )
+            
+            # Set database after connection
+            if hasattr(player, 'set_database'):
+                player.set_database(self.bot.db)
+            
             self.players[channel.guild.id] = player
             
             # Wait a moment for the connection to stabilize
@@ -677,13 +688,19 @@ class Music(commands.Cog):
             return await ctx.send("❌ Not connected to voice")
         
         # Check if queue is empty
-        queue_is_empty = await player.queue.is_empty if hasattr(player.queue, 'is_empty') and asyncio.iscoroutinefunction(getattr(player.queue, 'is_empty', None)) else player.queue.is_empty
+        if hasattr(player.queue, 'get_is_empty'):
+            queue_is_empty = await player.queue.get_is_empty()
+        else:
+            queue_is_empty = player.queue.is_empty
         
         if queue_is_empty and not player.playing:
             return await ctx.send("📭 Queue is empty")
         
         # Get queue size for pagination
-        queue_size = await player.queue.count if hasattr(player.queue, 'count') and asyncio.iscoroutinefunction(getattr(player.queue, 'count', None)) else player.queue.count
+        if hasattr(player.queue, 'get_count'):
+            queue_size = await player.queue.get_count()
+        else:
+            queue_size = player.queue.count
         
         # Paginate queue
         per_page = 10
@@ -796,8 +813,15 @@ class Music(commands.Cog):
             color=0xff9900
         )
         
-        queue_size = await player.queue.count if hasattr(player.queue, 'count') and asyncio.iscoroutinefunction(getattr(player.queue, 'count', None)) else player.queue.count
-        queue_is_empty = await player.queue.is_empty if hasattr(player.queue, 'is_empty') and asyncio.iscoroutinefunction(getattr(player.queue, 'is_empty', None)) else player.queue.is_empty
+        if hasattr(player.queue, 'get_count'):
+            queue_size = await player.queue.get_count()
+        else:
+            queue_size = player.queue.count
+            
+        if hasattr(player.queue, 'get_is_empty'):
+            queue_is_empty = await player.queue.get_is_empty()
+        else:
+            queue_is_empty = player.queue.is_empty
         
         embed.add_field(name="Queue Size", value=f"{queue_size}", inline=True)
         embed.add_field(name="Queue Empty", value=f"{queue_is_empty}", inline=True)
@@ -1082,13 +1106,19 @@ class Music(commands.Cog):
             return await ctx.send("❌ Not connected to voice")
         
         # Check if queue is empty
-        queue_is_empty = await player.queue.is_empty if hasattr(player.queue, 'is_empty') and asyncio.iscoroutinefunction(getattr(player.queue, 'is_empty', None)) else player.queue.is_empty
+        if hasattr(player.queue, 'get_is_empty'):
+            queue_is_empty = await player.queue.get_is_empty()
+        else:
+            queue_is_empty = player.queue.is_empty
         
         if queue_is_empty:
             return await ctx.send("❌ Queue is empty")
         
         # Get count before clearing
-        queue_size = await player.queue.count if hasattr(player.queue, 'count') and asyncio.iscoroutinefunction(getattr(player.queue, 'count', None)) else player.queue.count
+        if hasattr(player.queue, 'get_count'):
+            queue_size = await player.queue.get_count()
+        else:
+            queue_size = player.queue.count
         
         # Clear the queue
         if hasattr(player.queue, 'clear') and asyncio.iscoroutinefunction(player.queue.clear):
@@ -1190,17 +1220,26 @@ class Music(commands.Cog):
         player.skip_votes.clear()
         
         # Play next track
-        queue_is_empty = await player.queue.is_empty if hasattr(player.queue, 'is_empty') and asyncio.iscoroutinefunction(getattr(player.queue, 'is_empty', None)) else player.queue.is_empty
+        if hasattr(player.queue, 'get_is_empty'):
+            queue_is_empty = await player.queue.get_is_empty()
+        else:
+            queue_is_empty = player.queue.is_empty
         
         if not queue_is_empty:
             try:
-                queue_size = await player.queue.count if hasattr(player.queue, 'count') and asyncio.iscoroutinefunction(getattr(player.queue, 'count', None)) else player.queue.count
+                if hasattr(player.queue, 'get_count'):
+                    queue_size = await player.queue.get_count()
+                else:
+                    queue_size = player.queue.count
                 logger.info(f"Queue before getting next track: {queue_size} tracks")
                 
                 next_track = await player.queue.get_wait()
                 logger.info(f"Got next track from queue: {next_track.title} (Source: {next_track.source})")
                 
-                queue_size_after = await player.queue.count if hasattr(player.queue, 'count') and asyncio.iscoroutinefunction(getattr(player.queue, 'count', None)) else player.queue.count
+                if hasattr(player.queue, 'get_count'):
+                    queue_size_after = await player.queue.get_count()
+                else:
+                    queue_size_after = player.queue.count
                 logger.info(f"Queue after getting next track: {queue_size_after} tracks")
                 
                 # Handle YouTube fallback for queued tracks
