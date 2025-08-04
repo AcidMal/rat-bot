@@ -119,13 +119,13 @@ install_python() {
     fi
     
     if command -v apt-get &> /dev/null; then
-        sudo apt-get install -y python3 python3-pip python3-venv python3-dev build-essential libssl-dev libffi-dev
+        sudo apt-get install -y python3 python3-pip python3-venv python3-dev build-essential libssl-dev libffi-dev ffmpeg
     elif command -v dnf &> /dev/null; then
-        sudo dnf install -y python3 python3-pip python3-venv python3-devel gcc openssl-devel libffi-devel
+        sudo dnf install -y python3 python3-pip python3-venv python3-devel gcc openssl-devel libffi-devel ffmpeg
     elif command -v yum &> /dev/null; then
-        sudo yum install -y python3 python3-pip python3-venv python3-devel gcc openssl-devel libffi-devel
+        sudo yum install -y python3 python3-pip python3-venv python3-devel gcc openssl-devel libffi-devel ffmpeg
     elif command -v pacman &> /dev/null; then
-        sudo pacman -S --noconfirm python python-pip base-devel
+        sudo pacman -S --noconfirm python python-pip base-devel ffmpeg
     else
         print_error "Could not install Python. Please install Python ${PYTHON_VERSION}+ manually."
         exit 1

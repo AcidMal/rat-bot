@@ -16,6 +16,41 @@ if (-not $isAdmin) {
     Write-Host ""
 }
 
+# Check FFmpeg
+Write-Host "[INFO] Checking FFmpeg..." -ForegroundColor Cyan
+try {
+    $ffmpegVersion = ffmpeg -version 2>&1 | Select-String "ffmpeg version" | Select-Object -First 1
+    if ($ffmpegVersion) {
+        Write-Host "[SUCCESS] FFmpeg found: $ffmpegVersion" -ForegroundColor Green
+    } else {
+        Write-Host "[WARNING] FFmpeg not found. Installing FFmpeg..." -ForegroundColor Yellow
+        try {
+            winget install "FFmpeg (Essentials Build)" --accept-source-agreements --accept-package-agreements
+            Write-Host "[SUCCESS] FFmpeg installed" -ForegroundColor Green
+            # Refresh environment variables
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        } catch {
+            Write-Host "[ERROR] Failed to install FFmpeg automatically." -ForegroundColor Red
+            Write-Host "[INFO] Please install FFmpeg manually from: https://ffmpeg.org/download.html" -ForegroundColor Cyan
+            Write-Host "[INFO] After installing FFmpeg, run this script again." -ForegroundColor Cyan
+            exit 1
+        }
+    }
+} catch {
+    Write-Host "[WARNING] FFmpeg not found. Attempting to install..." -ForegroundColor Yellow
+    try {
+        winget install "FFmpeg (Essentials Build)" --accept-source-agreements --accept-package-agreements
+        Write-Host "[SUCCESS] FFmpeg installed" -ForegroundColor Green
+        # Refresh environment variables
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    } catch {
+        Write-Host "[ERROR] Failed to install FFmpeg automatically." -ForegroundColor Red
+        Write-Host "[INFO] Please install FFmpeg manually from: https://ffmpeg.org/download.html" -ForegroundColor Cyan
+        Write-Host "[INFO] After installing FFmpeg, run this script again." -ForegroundColor Cyan
+        exit 1
+    }
+}
+
 # Check Java
 Write-Host "[INFO] Checking Java..." -ForegroundColor Cyan
 try {
