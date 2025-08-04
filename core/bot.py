@@ -167,7 +167,8 @@ class AdvancedBot(commands.AutoShardedBot if config.sharding.enabled else comman
             'cogs.general',
             'cogs.admin',
             'cogs.fun',
-            'cogs.utility'
+            'cogs.utility',
+            'cogs.voice_channels'
         ]
         
         for extension in extensions:
