@@ -1,41 +1,37 @@
 import discord
 from discord.ext import commands
-import wavelink
 import asyncio
-import math
-import re
+import wavelink
 import yt_dlp
-from typing import Optional, List, Dict, Union
-from datetime import datetime, timezone, timedelta
+import os
+import json
+import tempfile
+from typing import Optional, Dict, List, Any
+from datetime import datetime, timezone
 from loguru import logger
-from core.db_queue import DatabaseQueue
+import subprocess
+import shutil
+from urllib.parse import urlparse
+import re
 
-class MusicPlayer(wavelink.Player):
-    """Enhanced music player with advanced features"""
+class YTDLPPlayer:
+    """Custom audio player using yt-dlp for YouTube and other sources"""
     
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, voice_client: discord.VoiceClient, guild_id: int, db=None):
+        self.voice_client = voice_client
+        self.guild_id = guild_id
+        self.db = db
         
-        # Database will be set after initialization
-        self.db = None
-        
-        # Start with wavelink queue, will be replaced with DatabaseQueue when db is set
-        self.queue = wavelink.Queue()
-        
+        # Queue management
+        self.queue = []
+        self.current_track = None
         self.history = []
-        self.loop_mode = "none"  # none, track, queue
         
         # Player state
-        self.is_locked = False
-        self.locked_by = None
-        self.auto_play = False
-        self.volume_locked = False
-        
-        # Advanced features
-        self._custom_filters = {}
-        self.equalizer = None
-        self.skip_votes = set()
-        self.required_skips = 1
+        self.is_playing = False
+        self.is_paused = False
+        self.loop_mode = "none"  # none, track, queue
+        self.volume = 1.0
         
         # Statistics
         self.tracks_played = 0
@@ -45,969 +41,578 @@ class MusicPlayer(wavelink.Player):
         # Concurrency control
         self._processing_next_track = False
         self._track_lock = asyncio.Lock()
+        
+        # yt-dlp configuration
+        self._setup_ytdlp()
     
-    def set_database(self, db):
-        """Set the database and initialize DatabaseQueue"""
-        self.db = db
-        if db and hasattr(self, 'guild') and self.guild:
-            logger.info(f"Initializing DatabaseQueue for guild {self.guild.id}")
-            old_queue_type = type(self.queue).__name__
-            
-            # Keep the original wavelink queue for internal operations
-            self._wavelink_queue = self.queue
-            # Add our database queue for persistence
-            self._db_queue = DatabaseQueue(self.guild.id, db)
-            
-            logger.info(f"Initialized hybrid queue system: {old_queue_type} + DatabaseQueue")
+    def _setup_ytdlp(self):
+        """Setup yt-dlp with optimal configuration"""
+        self.ytdl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(tempfile.gettempdir(), 'ytdlp_%(id)s.%(ext)s'),
+            'restrictfilenames': True,
+            'noplaylist': True,
+            'nocheckcertificate': True,
+            'ignoreerrors': False,
+            'logtostderr': False,
+            'quiet': True,
+            'no_warnings': True,
+            'extractaudio': True,
+            'audioformat': 'best',
+            'prefer_ffmpeg': True,
+        }
+        
+        # Add cookies if available
+        cookies_paths = [
+            'cookies.txt',
+            '/rat-bot/cookies.txt',
+            os.path.expanduser('~/cookies.txt'),
+            'data/cookies.txt'
+        ]
+        
+        for cookies_path in cookies_paths:
+            if os.path.exists(cookies_path):
+                self.ytdl_opts['cookiefile'] = cookies_path
+                logger.info(f"Using cookies from: {cookies_path}")
+                break
         else:
-            logger.warning("Could not initialize DatabaseQueue - using wavelink.Queue fallback")
-            self._wavelink_queue = self.queue
-            self._db_queue = None
-
-class Music(commands.Cog):
-    """Advanced music system with queue management, filters, and more"""
+            logger.warning("No cookies file found. YouTube access may be limited.")
     
-    def __init__(self, bot):
-        self.bot = bot
-        self.players: Dict[int, MusicPlayer] = {}
-    
-    def get_player(self, guild: discord.Guild) -> Optional[MusicPlayer]:
-        """Get the music player for a guild"""
-        return guild.voice_client if isinstance(guild.voice_client, MusicPlayer) else None
-    
-    async def _add_to_queue(self, player: MusicPlayer, track: wavelink.Playable):
-        """Helper method to add track to both wavelink and database queues"""
-        # Add to wavelink queue for internal operations
-        if hasattr(player, '_wavelink_queue'):
-            if hasattr(player._wavelink_queue, 'put_wait'):
-                await player._wavelink_queue.put_wait(track)
-            elif hasattr(player._wavelink_queue, 'put'):
-                await player._wavelink_queue.put(track)
-        
-        # Add to database queue for persistence
-        if hasattr(player, '_db_queue') and player._db_queue:
-            await player._db_queue.put_wait(track)
-        
-        # Fallback to original queue if hybrid system not set up
-        if not hasattr(player, '_wavelink_queue'):
-            if hasattr(player.queue, 'put_wait'):
-                await player.queue.put_wait(track)
-            elif hasattr(player.queue, 'put'):
-                await player.queue.put(track)
-            else:
-                logger.error(f"Queue object {type(player.queue)} has no put method")
-                raise AttributeError(f"Queue object {type(player.queue)} has no put method")
-    
-    async def connect_player(self, channel: discord.VoiceChannel) -> MusicPlayer:
-        """Connect to a voice channel and return the player"""
+    async def search(self, query: str, source: str = "auto") -> List[Dict]:
+        """Search for tracks using yt-dlp or fallback to Lavalink"""
         try:
-            # Disconnect existing connection if any
-            if channel.guild.voice_client:
-                await channel.guild.voice_client.disconnect(force=True)
-            
-            # Connect with timeout and retry
-            player = await channel.connect(
-                cls=MusicPlayer, 
-                timeout=30.0, 
-                reconnect=True
-            )
-            
-            # Set database after connection
-            if hasattr(player, 'set_database'):
-                player.set_database(self.bot.db)
-            
-            self.players[channel.guild.id] = player
-            
-            # Wait a moment for the connection to stabilize
-            await asyncio.sleep(1)
-            
-            logger.info(f"Successfully connected to voice channel: {channel.name} in {channel.guild.name}")
-            return player
+            # Determine search strategy
+            if source == "youtube" or query.startswith("yt:"):
+                query = query.replace("yt:", "").strip()
+                return await self._search_youtube(query)
+            elif source == "soundcloud" or query.startswith("sc:"):
+                query = query.replace("sc:", "").strip()
+                return await self._search_soundcloud(query)
+            elif source == "auto":
+                # Try multiple sources
+                results = await self._search_youtube(query)
+                if not results:
+                    results = await self._search_soundcloud(query)
+                if not results:
+                    results = await self._search_bandcamp(query)
+                return results
+            else:
+                # Use Lavalink for other sources
+                return await self._search_lavalink(query, source)
+                
         except Exception as e:
-            logger.error(f"Failed to connect to voice channel {channel.name}: {e}")
-            raise
+            logger.error(f"Search failed: {e}")
+            return []
     
-    async def _search_youtube_direct(self, query: str) -> Optional[str]:
-        """Search YouTube directly using yt-dlp and return stream URL"""
+    async def _search_youtube(self, query: str, max_results: int = 10) -> List[Dict]:
+        """Search YouTube using yt-dlp"""
         try:
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'format': 'bestaudio/best',
-                'noplaylist': True,
-                'extract_flat': False,
-            }
+            search_query = f"ytsearch{max_results}:{query}"
             
-            # Add cookies if available
-            import os
-            cookies_paths = [
-                'cookies.txt',
-                '/rat-bot/cookies.txt',
-                os.path.expanduser('~/cookies.txt'),
-                'data/cookies.txt'
-            ]
-            
-            for cookies_path in cookies_paths:
-                if os.path.exists(cookies_path):
-                    ydl_opts['cookiefile'] = cookies_path
-                    logger.info(f"Using cookies from: {cookies_path}")
-                    break
-            else:
-                logger.warning("No cookies file found. YouTube access may be limited.")
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # Search for the query
-                search_query = f"ytsearch1:{query}"
+            with yt_dlp.YoutubeDL(self.ytdl_opts) as ydl:
                 info = await asyncio.get_event_loop().run_in_executor(
                     None, lambda: ydl.extract_info(search_query, download=False)
                 )
                 
-                if info and 'entries' in info and info['entries']:
-                    entry = info['entries'][0]
-                    return {
-                        'url': entry['url'],
-                        'title': entry['title'],
-                        'duration': entry.get('duration', 0),
-                        'webpage_url': entry['webpage_url']
-                    }
-                    
+                if not info or 'entries' not in info:
+                    return []
+                
+                results = []
+                for entry in info['entries']:
+                    if entry:
+                        results.append({
+                            'title': entry.get('title', 'Unknown'),
+                            'url': entry.get('url', ''),
+                            'webpage_url': entry.get('webpage_url', ''),
+                            'duration': entry.get('duration', 0),
+                            'uploader': entry.get('uploader', 'Unknown'),
+                            'view_count': entry.get('view_count', 0),
+                            'source': 'youtube',
+                            'id': entry.get('id', ''),
+                            'thumbnail': entry.get('thumbnail', ''),
+                            'description': entry.get('description', '')[:200] + '...' if entry.get('description') else ''
+                        })
+                
+                logger.info(f"YouTube search found {len(results)} results for: {query}")
+                return results
+                
         except Exception as e:
-            logger.error(f"YouTube direct search failed: {e}")
-            return None
+            logger.error(f"YouTube search failed: {e}")
+            return []
     
-    async def _handle_youtube_fallback(self, ctx, original_title: str, player: MusicPlayer):
-        """Handle YouTube playback failure by searching alternative sources"""
-        logger.info(f"Searching for alternatives to YouTube track: {original_title}")
-        
-        # First try direct YouTube with yt-dlp
+    async def _search_soundcloud(self, query: str) -> List[Dict]:
+        """Search SoundCloud using Lavalink"""
         try:
-            logger.info("Attempting direct YouTube search with yt-dlp...")
-            youtube_info = await self._search_youtube_direct(original_title)
-            if youtube_info:
-                # Create a direct HTTP track
-                tracks = await wavelink.Playable.search(youtube_info['url'])
-                if tracks:
-                    track = tracks[0]
-                    await player.play(track)
-                    
-                    embed = discord.Embed(
-                        title="🎵 Now Playing (Direct YouTube)",
-                        description=f"**[{youtube_info['title']}]({youtube_info['webpage_url']})**\n"
-                                   f"*Using direct YouTube stream*",
-                        color=0x00ff00
-                    )
-                    embed.add_field(name="Duration", value=self._format_time(youtube_info['duration']), inline=True)
-                    embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
-                    embed.add_field(name="Source", value="YouTube (Direct)", inline=True)
-                    
-                    await ctx.send(embed=embed)
-                    return
-        except Exception as e:
-            logger.warning(f"Direct YouTube fallback failed: {e}")
-        
-        # Try alternative sources for the same track
-        fallback_sources = [
-            ("SoundCloud", f"scsearch:{original_title}"),
-            ("Bandcamp", f"bcsearch:{original_title}")
-        ]
-        
-        for source_name, search_query in fallback_sources:
-            try:
-                tracks = await wavelink.Playable.search(search_query)
-                if tracks:
-                    fallback_track = tracks[0]
-                    logger.info(f"Found fallback track on {source_name}: {fallback_track.title}")
-                    
-                    try:
-                        await player.play(fallback_track)
-                        
-                        embed = discord.Embed(
-                            title="🎵 Now Playing (Fallback)",
-                            description=f"**[{fallback_track.title}]({fallback_track.uri})**\n"
-                                       f"*YouTube version failed, playing from {source_name}*",
-                            color=0xffa500  # Orange for fallback
-                        )
-                        embed.add_field(name="Duration", value=self._format_time(fallback_track.length), inline=True)
-                        embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
-                        embed.add_field(name="Source", value=fallback_track.source, inline=True)
-                        
-                        await ctx.send(embed=embed)
-                        return
-                        
-                    except Exception as e:
-                        logger.warning(f"Fallback track from {source_name} also failed: {e}")
-                        continue
-                        
-            except Exception as e:
-                logger.warning(f"Fallback search failed on {source_name}: {e}")
-                continue
-        
-        # If all fallbacks failed
-        embed = discord.Embed(
-            title="❌ Playback Failed",
-            description=f"**{original_title}** failed to play from YouTube and no alternatives were found.",
-            color=0xff0000
-        )
-        await ctx.send(embed=embed)
-    
-    @commands.group(name="music", aliases=["m"], invoke_without_command=True)
-    async def music(self, ctx):
-        """Music command group"""
-        await ctx.send_help(ctx.command)
-    
-    @commands.command(name="debug")
-    async def debug_voice(self, ctx):
-        """Debug voice connection and permissions"""
-        embed = discord.Embed(title="🔧 Voice Debug Info", color=0x00ff00)
-        
-        # Check bot permissions
-        permissions = ctx.channel.permissions_for(ctx.guild.me)
-        embed.add_field(
-            name="Bot Permissions",
-            value=f"Connect: {permissions.connect}\n"
-                  f"Speak: {permissions.speak}\n"
-                  f"Use Voice Activity: {permissions.use_voice_activation}",
-            inline=True
-        )
-        
-        # Check voice client status
-        if ctx.voice_client:
-            player = ctx.voice_client
-            embed.add_field(
-                name="Voice Client",
-                value=f"Channel: {player.channel.name if player.channel else 'None'}\n"
-                      f"Playing: {player.playing}\n"
-                      f"Paused: {player.paused}\n"
-                      f"Current: {player.current.title if player.current else 'None'}",
-                inline=True
-            )
-        else:
-            embed.add_field(name="Voice Client", value="Not connected", inline=True)
-        
-        # Check Lavalink connection
-        nodes = wavelink.Pool.nodes
-        if nodes:
-            node = list(nodes.values())[0]
-            embed.add_field(
-                name="Lavalink",
-                value=f"Node ID: {node.identifier}\n"
-                      f"Players: {len(node.players)}",
-                inline=True
-            )
-        else:
-            embed.add_field(name="Lavalink", value="No nodes", inline=True)
-        
-        await ctx.send(embed=embed)
-
-    @commands.command(name="status")
-    async def player_status(self, ctx):
-        """Check current player status"""
-        player = self.get_player(ctx.guild)
-        if not player:
-            return await ctx.send("❌ No player found")
-        
-        embed = discord.Embed(title="🎵 Player Status", color=0x00ff00)
-        embed.add_field(name="Playing", value=player.playing, inline=True)
-        embed.add_field(name="Paused", value=player.paused, inline=True)
-        embed.add_field(name="Volume", value=f"{player.volume}%", inline=True)
-        
-        if player.current:
-            embed.add_field(name="Current Track", value=player.current.title, inline=False)
-            embed.add_field(name="Source", value=player.current.source, inline=True)
-            embed.add_field(name="Position", value=f"{self._format_time(player.position)}/{self._format_time(player.current.length)}", inline=True)
-        
-        embed.add_field(name="Queue", value=f"{player.queue.count} tracks", inline=True)
-        
-        await ctx.send(embed=embed)
-
-    @commands.command(name="voicetest")
-    async def voice_test(self, ctx):
-        """Test voice connection and play a short test tone"""
-        if not ctx.author.voice:
-            return await ctx.send("❌ You need to be in a voice channel!")
-        
-        # Connect if not connected
-        if not ctx.voice_client:
-            try:
-                await self.connect_player(ctx.author.voice.channel)
-            except Exception as e:
-                return await ctx.send(f"❌ Failed to connect: {e}")
-        
-        player = self.get_player(ctx.guild)
-        if not player:
-            return await ctx.send("❌ No player found")
-        
-        # Try to play a test track (silence/test tone)
-        try:
-            # Search for a very short test track
-            tracks = await wavelink.Playable.search("scsearch:test tone 1 second")
+            tracks = await wavelink.Playable.search(f"scsearch:{query}")
             if not tracks:
-                tracks = await wavelink.Playable.search("ytsearch:1 second test tone")
+                return []
             
-            if tracks:
-                test_track = tracks[0]
-                await player.play(test_track)
-                
-                embed = discord.Embed(
-                    title="🔊 Voice Test",
-                    description=f"Playing test track: **{test_track.title}**\n"
-                               f"Voice Channel: **{ctx.voice_client.channel.name}**\n"
-                               f"If you can hear this, voice connection is working!",
-                    color=0x00ff00
-                )
-                await ctx.send(embed=embed)
-            else:
-                await ctx.send("❌ Could not find test track")
-                
+            results = []
+            for track in tracks[:10]:  # Limit to 10 results
+                results.append({
+                    'title': track.title,
+                    'url': track.uri,
+                    'webpage_url': track.uri,
+                    'duration': track.length // 1000 if track.length else 0,
+                    'uploader': track.author or 'Unknown',
+                    'source': 'soundcloud',
+                    'id': track.identifier,
+                    'thumbnail': track.artwork,
+                    'description': ''
+                })
+            
+            logger.info(f"SoundCloud search found {len(results)} results for: {query}")
+            return results
+            
         except Exception as e:
-            logger.error(f"Voice test failed: {e}")
-            await ctx.send(f"❌ Voice test failed: {e}")
-
-    @commands.command(name="testurl")
-    async def test_url(self, ctx, url: str = None):
-        """Test playing a direct URL (for debugging)"""
-        if not url:
-            url = "https://www.soundjay.com/misc/sounds/bell-ringing-05.wav"  # Short test sound
-        
-        if not ctx.author.voice:
-            return await ctx.send("❌ You need to be in a voice channel!")
-        
-        if not ctx.voice_client:
-            try:
-                await self.connect_player(ctx.author.voice.channel)
-            except Exception as e:
-                return await ctx.send(f"❌ Failed to connect: {e}")
-        
-        player = self.get_player(ctx.guild)
-        if not player:
-            return await ctx.send("❌ No player found")
-        
+            logger.error(f"SoundCloud search failed: {e}")
+            return []
+    
+    async def _search_bandcamp(self, query: str) -> List[Dict]:
+        """Search Bandcamp using Lavalink"""
         try:
-            tracks = await wavelink.Playable.search(url)
-            if tracks:
-                await player.play(tracks[0])
-                await ctx.send(f"🔊 Testing direct URL: {url}")
-            else:
-                await ctx.send("❌ Could not load URL")
-        except Exception as e:
-            await ctx.send(f"❌ URL test failed: {e}")
-
-    @commands.command(name="join", aliases=["connect"])
-    async def join(self, ctx, *, channel: discord.VoiceChannel = None):
-        """Join a voice channel"""
-        if not channel:
-            if not ctx.author.voice:
-                embed = discord.Embed(
-                    title="❌ No Voice Channel",
-                    description="You need to be in a voice channel or specify one!",
-                    color=0xff0000
-                )
-                return await ctx.send(embed=embed)
-            channel = ctx.author.voice.channel
-        
-        if ctx.voice_client:
-            if ctx.voice_client.channel == channel:
-                embed = discord.Embed(
-                    title="ℹ️ Already Connected",
-                    description=f"Already connected to {channel.mention}",
-                    color=0x00aaff
-                )
-                return await ctx.send(embed=embed)
+            tracks = await wavelink.Playable.search(f"bcsearch:{query}")
+            if not tracks:
+                return []
             
-            await ctx.voice_client.move_to(channel)
-        else:
-            await self.connect_player(channel)
+            results = []
+            for track in tracks[:10]:  # Limit to 10 results
+                results.append({
+                    'title': track.title,
+                    'url': track.uri,
+                    'webpage_url': track.uri,
+                    'duration': track.length // 1000 if track.length else 0,
+                    'uploader': track.author or 'Unknown',
+                    'source': 'bandcamp',
+                    'id': track.identifier,
+                    'thumbnail': track.artwork,
+                    'description': ''
+                })
+            
+            logger.info(f"Bandcamp search found {len(results)} results for: {query}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Bandcamp search failed: {e}")
+            return []
+    
+    async def _search_lavalink(self, query: str, source: str) -> List[Dict]:
+        """Fallback search using Lavalink"""
+        try:
+            search_query = f"{source}search:{query}" if source != "auto" else query
+            tracks = await wavelink.Playable.search(search_query)
+            
+            if not tracks:
+                return []
+            
+            results = []
+            for track in tracks[:10]:
+                results.append({
+                    'title': track.title,
+                    'url': track.uri,
+                    'webpage_url': track.uri,
+                    'duration': track.length // 1000 if track.length else 0,
+                    'uploader': track.author or 'Unknown',
+                    'source': source,
+                    'id': track.identifier,
+                    'thumbnail': getattr(track, 'artwork', ''),
+                    'description': ''
+                })
+            
+            logger.info(f"Lavalink search found {len(results)} results for: {query}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Lavalink search failed: {e}")
+            return []
+    
+    async def add_to_queue(self, track_data: Dict, requester: discord.Member = None):
+        """Add a track to the queue"""
+        track_data['requester'] = requester
+        track_data['requested_at'] = datetime.now(timezone.utc)
         
-        embed = discord.Embed(
-            title="✅ Connected",
-            description=f"Joined {channel.mention}",
-            color=0x00ff00
-        )
-        await ctx.send(embed=embed)
+        # Add to database if available
+        if self.db:
+            try:
+                await self.db.add_to_queue(self.guild_id, track_data)
+            except Exception as e:
+                logger.error(f"Failed to add track to database queue: {e}")
+        
+        # Add to local queue
+        self.queue.append(track_data)
+        logger.info(f"Added to queue: {track_data['title']} (Position: {len(self.queue)})")
+    
+    async def play_next(self):
+        """Play the next track in the queue"""
+        async with self._track_lock:
+            if self._processing_next_track:
+                logger.info("Already processing next track, skipping...")
+                return
+            
+            self._processing_next_track = True
+            
+            try:
+                # Get next track from queue
+                if not self.queue:
+                    if self.loop_mode == "queue" and self.history:
+                        # Restart queue
+                        self.queue = self.history.copy()
+                        self.history.clear()
+                        logger.info("Restarting queue loop")
+                    else:
+                        logger.info("Queue is empty")
+                        self.current_track = None
+                        self.is_playing = False
+                        return
+                
+                # Get next track
+                if self.loop_mode == "track" and self.current_track:
+                    next_track = self.current_track
+                else:
+                    next_track = self.queue.pop(0)
+                    
+                    # Remove from database if available
+                    if self.db:
+                        try:
+                            await self.db.get_next_in_queue(self.guild_id)
+                        except Exception as e:
+                            logger.error(f"Failed to remove track from database queue: {e}")
+                
+                logger.info(f"Playing next track: {next_track['title']} (Source: {next_track['source']})")
+                await self._play_track(next_track)
+                
+            except Exception as e:
+                logger.error(f"Error in play_next: {e}")
+                # Try to continue with next track
+                if self.queue:
+                    await asyncio.sleep(1)
+                    await self.play_next()
+            
+            finally:
+                self._processing_next_track = False
+    
+    async def _play_track(self, track_data: Dict):
+        """Play a specific track"""
+        try:
+            self.current_track = track_data
+            
+            if track_data['source'] == 'youtube':
+                await self._play_youtube_track(track_data)
+            else:
+                await self._play_lavalink_track(track_data)
+                
+        except Exception as e:
+            logger.error(f"Failed to play track {track_data['title']}: {e}")
+            # Try next track
+            await self.play_next()
+    
+    async def _play_youtube_track(self, track_data: Dict):
+        """Play a YouTube track using yt-dlp"""
+        try:
+            # Extract audio URL using yt-dlp
+            with yt_dlp.YoutubeDL(self.ytdl_opts) as ydl:
+                info = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: ydl.extract_info(track_data['webpage_url'], download=False)
+                )
+                
+                if not info:
+                    raise Exception("Failed to extract track info")
+                
+                # Get the best audio URL
+                audio_url = info.get('url')
+                if not audio_url:
+                    raise Exception("No audio URL found")
+                
+                # Create FFmpeg source
+                ffmpeg_options = {
+                    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                    'options': f'-vn -filter:a "volume={self.volume}"'
+                }
+                
+                source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_options)
+                
+                # Play the track
+                self.voice_client.play(source, after=lambda e: asyncio.create_task(self._track_finished(e)))
+                self.is_playing = True
+                self.is_paused = False
+                
+                logger.info(f"Started playing YouTube track: {track_data['title']}")
+                
+        except Exception as e:
+            logger.error(f"Failed to play YouTube track: {e}")
+            raise
+    
+    async def _play_lavalink_track(self, track_data: Dict):
+        """Play a non-YouTube track using yt-dlp fallback"""
+        try:
+            # Try to use yt-dlp for all sources for consistency
+            with yt_dlp.YoutubeDL(self.ytdl_opts) as ydl:
+                info = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: ydl.extract_info(track_data['url'], download=False)
+                )
+                
+                if not info:
+                    raise Exception("Failed to extract track info")
+                
+                audio_url = info.get('url', track_data['url'])
+                
+                ffmpeg_options = {
+                    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                    'options': f'-vn -filter:a "volume={self.volume}"'
+                }
+                
+                source = discord.FFmpegPCMAudio(audio_url, **ffmpeg_options)
+                self.voice_client.play(source, after=lambda e: asyncio.create_task(self._track_finished(e)))
+                self.is_playing = True
+                self.is_paused = False
+                
+                logger.info(f"Started playing track: {track_data['title']}")
+                
+        except Exception as e:
+            logger.error(f"Failed to play track via yt-dlp fallback: {e}")
+            raise
+    
+    async def _track_finished(self, error):
+        """Handle track completion"""
+        if error:
+            logger.error(f"Player error: {error}")
+        
+        if self.current_track:
+            # Add to history (unless it's a loop)
+            if self.loop_mode != "track":
+                self.history.append(self.current_track)
+                # Limit history size
+                if len(self.history) > 50:
+                    self.history.pop(0)
+            
+            # Update statistics
+            self.tracks_played += 1
+            if self.current_track.get('duration'):
+                self.total_playtime += self.current_track['duration']
+        
+        self.is_playing = False
+        
+        # Play next track
+        await self.play_next()
+    
+    async def skip(self):
+        """Skip the current track"""
+        if self.voice_client.is_playing():
+            self.voice_client.stop()
+        else:
+            await self.play_next()
+    
+    def pause(self):
+        """Pause playback"""
+        if self.voice_client.is_playing():
+            self.voice_client.pause()
+            self.is_paused = True
+    
+    def resume(self):
+        """Resume playback"""
+        if self.voice_client.is_paused():
+            self.voice_client.resume()
+            self.is_paused = False
+    
+    def stop(self):
+        """Stop playback and clear queue"""
+        if self.voice_client.is_playing() or self.voice_client.is_paused():
+            self.voice_client.stop()
+        self.queue.clear()
+        self.current_track = None
+        self.is_playing = False
+        self.is_paused = False
+    
+    async def set_volume(self, volume: float):
+        """Set playback volume (0.0 to 1.0)"""
+        self.volume = max(0.0, min(1.0, volume))
+        # Note: Volume changes will apply to the next track
+        # For real-time volume control, we'd need to implement audio filtering
+    
+    async def clear_queue(self):
+        """Clear the queue"""
+        cleared_count = len(self.queue)
+        self.queue.clear()
+        
+        if self.db:
+            try:
+                await self.db.clear_queue(self.guild_id)
+            except Exception as e:
+                logger.error(f"Failed to clear database queue: {e}")
+        
+        return cleared_count
+    
+    def get_queue_info(self) -> Dict:
+        """Get information about the current queue"""
+        return {
+            'current': self.current_track,
+            'queue': self.queue.copy(),
+            'queue_length': len(self.queue),
+            'is_playing': self.is_playing,
+            'is_paused': self.is_paused,
+            'loop_mode': self.loop_mode,
+            'volume': self.volume,
+            'history_length': len(self.history),
+            'tracks_played': self.tracks_played,
+            'total_playtime': self.total_playtime
+        }
+
+
+class Music(commands.Cog):
+    """Advanced music cog using yt-dlp with cookies support"""
+    
+    def __init__(self, bot):
+        self.bot = bot
+        self.players: Dict[int, YTDLPPlayer] = {}
+    
+    def get_player(self, guild: discord.Guild) -> Optional[YTDLPPlayer]:
+        """Get or create a player for the guild"""
+        return self.players.get(guild.id)
+    
+    async def connect_player(self, channel: discord.VoiceChannel) -> YTDLPPlayer:
+        """Connect to a voice channel and create a player"""
+        try:
+            # Disconnect existing connection
+            if channel.guild.voice_client:
+                await channel.guild.voice_client.disconnect(force=True)
+            
+            # Connect to voice channel
+            voice_client = await channel.connect(timeout=30.0, reconnect=True)
+            
+            # Create player
+            player = YTDLPPlayer(voice_client, channel.guild.id, self.bot.db)
+            self.players[channel.guild.id] = player
+            
+            logger.info(f"Connected to voice channel: {channel.name} in {channel.guild.name}")
+            return player
+            
+        except Exception as e:
+            logger.error(f"Failed to connect to voice channel {channel.name}: {e}")
+            raise
     
     @commands.command(name="play", aliases=["p"])
     async def play(self, ctx, *, query: str):
         """Play a song or add it to the queue"""
-        if not ctx.voice_client:
-            if not ctx.author.voice:
-                embed = discord.Embed(
-                    title="❌ Not Connected",
-                    description="You need to be in a voice channel!",
-                    color=0xff0000
-                )
-                return await ctx.send(embed=embed)
-            
-            # Connect to voice channel with better error handling
+        if not query:
+            return await ctx.send("❌ Please provide a song to play!")
+        
+        # Get user's voice channel
+        if not ctx.author.voice:
+            return await ctx.send("❌ You need to be in a voice channel!")
+        
+        channel = ctx.author.voice.channel
+        
+        # Get or create player
+        player = self.get_player(ctx.guild)
+        if not player or not ctx.guild.voice_client:
             try:
-                await self.connect_player(ctx.author.voice.channel)
+                player = await self.connect_player(channel)
+            except Exception as e:
+                return await ctx.send(f"❌ Failed to connect to voice channel: {e}")
+        
+        # Show searching message
+        search_msg = await ctx.send(f"🔍 Searching for: `{query}`...")
+        
+        try:
+            # Determine source from query
+            source = "auto"
+            if query.startswith("yt:"):
+                source = "youtube"
+            elif query.startswith("sc:"):
+                source = "soundcloud"
+            
+            # Search for tracks
+            results = await player.search(query, source)
+            
+            if not results:
+                return await search_msg.edit(content="❌ No results found!")
+            
+            # Take the first result
+            track = results[0]
+            
+            # Add requester info
+            track['requester'] = ctx.author
+            
+            # If nothing is playing, start immediately
+            if not player.is_playing and not player.queue:
+                await search_msg.edit(content=f"🎵 Loading: **{track['title']}**...")
+                await player._play_track(track)
+                
                 embed = discord.Embed(
-                    title="🔗 Connected",
-                    description=f"Joined **{ctx.author.voice.channel.name}**",
+                    title="🎵 Now Playing",
+                    description=f"**{track['title']}**",
                     color=0x00ff00
                 )
-                await ctx.send(embed=embed)
-            except Exception as e:
-                embed = discord.Embed(
-                    title="❌ Connection Failed",
-                    description=f"Failed to connect to voice channel: {str(e)}",
-                    color=0xff0000
-                )
-                return await ctx.send(embed=embed)
-        
-        player = self.get_player(ctx.guild)
-        if not player:
-            return await ctx.send("❌ Failed to get player")
-        
-        # Check if player is locked
-        if player.is_locked and ctx.author.id != player.locked_by:
-            embed = discord.Embed(
-                title="🔒 Player Locked",
-                description="The music player is currently locked.",
-                color=0xff0000
-            )
-            return await ctx.send(embed=embed)
-        
-        # Search for tracks using multiple sources with bypass
-        try:
-            tracks = None
-            # Check if user wants direct YouTube search
-            if query.lower().startswith('yt:') or query.lower().startswith('youtube:'):
-                youtube_query = query.split(':', 1)[1].strip()
-                logger.info(f"Direct YouTube search requested: {youtube_query}")
+                embed.add_field(name="Duration", value=self._format_duration(track['duration']), inline=True)
+                embed.add_field(name="Source", value=track['source'].title(), inline=True)
+                embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
                 
-                youtube_info = await self._search_youtube_direct(youtube_query)
-                if youtube_info:
-                    tracks = await wavelink.Playable.search(youtube_info['url'])
-                    if tracks:
-                        logger.info(f"Found direct YouTube track: {youtube_info['title']}")
-                        # Mark as YouTube source for tracking
-                        tracks[0]._youtube_direct = True
-                        tracks[0]._youtube_info = youtube_info
-            
-            # If not direct YouTube or direct YouTube failed, try other sources
-            if not tracks:
-                # Prioritize reliable sources first
-                search_sources = [
-                    ("SoundCloud", f"scsearch:{query}"),
-                    ("Bandcamp", f"bcsearch:{query}"),
-                    ("HTTP", query if query.startswith(('http://', 'https://')) else None)
-                ]
+                if track.get('thumbnail'):
+                    embed.set_thumbnail(url=track['thumbnail'])
                 
-                # Try each source until we find results
-                for source_name, search_query in search_sources:
-                    if search_query is None:  # Skip HTTP if not a URL
-                        continue
-                    try:
-                        tracks = await wavelink.Playable.search(search_query)
-                        if tracks:
-                            logger.info(f"Found tracks using {source_name}: {len(tracks)} results")
-                            break
-                    except Exception as e:
-                        logger.warning(f"Search failed on {source_name}: {e}")
-                        continue
-            
-            if not tracks:
-                embed = discord.Embed(
-                    title="❌ No Results",
-                    description="No tracks found for your query on any available source.\n"
-                               "💡 Try using `yt:` prefix for direct YouTube search (e.g., `!play yt:song name`)",
-                    color=0xff0000
-                )
-                return await ctx.send(embed=embed)
-        except Exception as e:
-            logger.error(f"Search error: {e}")
-            return await ctx.send("❌ Search failed. Please try again.")
-        
-        # Handle playlists
-        if isinstance(tracks, wavelink.Playlist):
-            await self._handle_playlist(ctx, player, tracks)
-        else:
-            await self._handle_single_track(ctx, player, tracks[0])
-        
-        # Update user stats
-        if self.bot.db:
-            await self.bot.db.increment_user_stat(ctx.author.id, 'songs_played')
-    
-    async def _handle_single_track(self, ctx, player: MusicPlayer, track: wavelink.Playable):
-        """Handle adding a single track"""
-        # Add requester info
-        track.requester = ctx.author
-        track.requested_at = datetime.now(timezone.utc)
-        
-        logger.info(f"Handling single track: {track.title} (URI: {track.uri[:50]}...)")
-        logger.info(f"Player currently playing: {player.playing}")
-        logger.info(f"Queue type: {type(player.queue)}")
-        logger.info(f"Current queue size: {player.queue.count}")
-        
-        if player.playing:
-            # Add to queue
-            await self._add_to_queue(player, track)
-            logger.info(f"Added track to queue: {track.title} (Position: {player.queue.count})")
-            
-            embed = discord.Embed(
-                title="📝 Added to Queue",
-                description=f"**[{track.title}]({track.uri})**",
-                color=0x00ff00
-            )
-            embed.add_field(name="Duration", value=self._format_time(track.length), inline=True)
-            embed.add_field(name="Position", value=f"{player.queue.count}", inline=True)
-            embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
-            
-            if hasattr(track, 'thumbnail'):
-                embed.set_thumbnail(url=track.thumbnail)
-            
-            await ctx.send(embed=embed)
-        else:
-            # Play immediately
-            try:
-                # Verify voice connection before playing
-                if not ctx.voice_client or not hasattr(ctx.voice_client, 'channel'):
-                    raise Exception("Voice connection lost")
+                await search_msg.edit(content=None, embed=embed)
                 
-                # Set volume to ensure audio is audible
-                await player.set_volume(100)
-                
-                # Play the track with YouTube fallback handling
-                try:
-                    logger.info(f"About to play track. Player type: {type(player)}, Queue type: {type(player.queue)}")
-                    await player.play(track)
-                    logger.info(f"Started playing track: {track.title} from {track.source}")
-                    logger.info(f"Voice channel: {ctx.voice_client.channel.name}")
-                    logger.info(f"Player state - Playing: {player.playing}, Paused: {player.paused}")
-                    
-                    # Check if it's a YouTube track and if it actually started playing
-                    if track.source == "youtube":
-                        await asyncio.sleep(2)  # Give it a moment to start
-                        if not player.playing and not player.paused:
-                            logger.warning("YouTube track failed to play, attempting fallback...")
-                            await self._handle_youtube_fallback(ctx, track.title, player)
-                            return
-                            
-                except Exception as e:
-                    if track.source == "youtube":
-                        logger.warning(f"YouTube track failed: {e}, attempting fallback...")
-                        await self._handle_youtube_fallback(ctx, track.title, player)
-                        return
-                    else:
-                        raise e
-                
-                # Check if this is a direct YouTube track
-                if hasattr(track, '_youtube_direct') and track._youtube_direct:
-                    youtube_info = track._youtube_info
-                    embed = discord.Embed(
-                        title="🎵 Now Playing (Direct YouTube)",
-                        description=f"**[{youtube_info['title']}]({youtube_info['webpage_url']})**",
-                        color=0x00ff00
-                    )
-                    embed.add_field(name="Duration", value=self._format_time(youtube_info['duration']), inline=True)
-                    embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
-                    embed.add_field(name="Source", value="YouTube (Direct)", inline=True)
-                else:
-                    embed = discord.Embed(
-                        title="🎵 Now Playing",
-                        description=f"**[{track.title}]({track.uri})**",
-                        color=0x00ff00
-                    )
-                    embed.add_field(name="Duration", value=self._format_time(track.length), inline=True)
-                    embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
-                    embed.add_field(name="Source", value=track.source, inline=True)
-                
-                embed.add_field(name="Voice Channel", value=ctx.voice_client.channel.name, inline=True)
-                
-                # Add a note about potential audio issues
-                embed.set_footer(text="💡 If you can't hear audio, check your Discord voice settings and ensure the bot has proper permissions.")
-                
-            except Exception as e:
-                logger.error(f"Failed to play track {track.title}: {e}")
-                embed = discord.Embed(
-                    title="❌ Playback Error",
-                    description=f"Failed to play **{track.title}**\nError: {str(e)}",
-                    color=0xff0000
-                )
-                return await ctx.send(embed=embed)
-            
-            if hasattr(track, 'thumbnail'):
-                embed.set_thumbnail(url=track.thumbnail)
-            
-            await ctx.send(embed=embed)
-    
-    async def _handle_playlist(self, ctx, player: MusicPlayer, playlist: wavelink.Playlist):
-        """Handle adding a playlist"""
-        if not playlist.tracks:
-            return await ctx.send("❌ Playlist is empty")
-        
-        # Add all tracks to queue
-        added = 0
-        for track in playlist.tracks:
-            track.requester = ctx.author
-            track.requested_at = datetime.now(timezone.utc)
-            
-            if not player.playing and added == 0:
-                await player.play(track)
             else:
-                await self._add_to_queue(player, track)
-            added += 1
+                # Add to queue
+                await player.add_to_queue(track, ctx.author)
+                
+                embed = discord.Embed(
+                    title="📝 Added to Queue",
+                    description=f"**{track['title']}**",
+                    color=0x0099ff
+                )
+                embed.add_field(name="Position", value=f"#{len(player.queue)}", inline=True)
+                embed.add_field(name="Duration", value=self._format_duration(track['duration']), inline=True)
+                embed.add_field(name="Source", value=track['source'].title(), inline=True)
+                
+                if track.get('thumbnail'):
+                    embed.set_thumbnail(url=track['thumbnail'])
+                
+                await search_msg.edit(content=None, embed=embed)
         
-        embed = discord.Embed(
-            title="📝 Playlist Added",
-            description=f"**{playlist.name}**",
-            color=0x00ff00
-        )
-        embed.add_field(name="Tracks Added", value=str(added), inline=True)
-        embed.add_field(name="Total Duration", value=self._format_time(sum(t.length for t in playlist.tracks)), inline=True)
-        embed.add_field(name="Requested by", value=ctx.author.mention, inline=True)
-        
-        await ctx.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Error in play command: {e}")
+            await search_msg.edit(content=f"❌ Error: {e}")
     
     @commands.command(name="skip", aliases=["s"])
     async def skip(self, ctx):
         """Skip the current track"""
         player = self.get_player(ctx.guild)
-        if not player or not player.playing:
-            return await ctx.send("❌ Nothing is playing")
-        
-        # Check permissions for skip
-        if await self._can_skip(ctx, player):
-            logger.info(f"Skipping track: {player.current.title if player.current else 'Unknown'}")
-            logger.info(f"Queue size before skip: {player.queue.count}")
-            await player.skip()
-            embed = discord.Embed(
-                title="⏭️ Skipped",
-                description="Skipped the current track",
-                color=0x00ff00
-            )
-            await ctx.send(embed=embed)
-        else:
-            # Vote skip system
-            await self._vote_skip(ctx, player)
-    
-    async def _can_skip(self, ctx, player: MusicPlayer) -> bool:
-        """Check if user can skip without voting"""
-        # DJ permissions, track requester, or alone in voice
-        if (ctx.author.guild_permissions.manage_channels or 
-            (hasattr(player.current, 'requester') and player.current.requester == ctx.author) or
-            len([m for m in ctx.voice_client.channel.members if not m.bot]) <= 1):
-            return True
-        return False
-    
-    async def _vote_skip(self, ctx, player: MusicPlayer):
-        """Handle vote skip system"""
-        if ctx.author.id in player.skip_votes:
-            return await ctx.send("❌ You've already voted to skip")
-        
-        player.skip_votes.add(ctx.author.id)
-        
-        # Calculate required votes (50% of non-bot members)
-        voice_members = [m for m in ctx.voice_client.channel.members if not m.bot]
-        player.required_skips = max(1, math.ceil(len(voice_members) * 0.5))
-        
-        if len(player.skip_votes) >= player.required_skips:
-            await player.skip()
-            player.skip_votes.clear()
-            embed = discord.Embed(
-                title="⏭️ Vote Skip Successful",
-                description="Skipped the current track",
-                color=0x00ff00
-            )
-        else:
-            embed = discord.Embed(
-                title="🗳️ Vote Registered",
-                description=f"Skip votes: {len(player.skip_votes)}/{player.required_skips}",
-                color=0xffaa00
-            )
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="queue", aliases=["q"])
-    async def queue(self, ctx, page: int = 1):
-        """Show the music queue"""
-        player = self.get_player(ctx.guild)
         if not player:
-            return await ctx.send("❌ Not connected to voice")
+            return await ctx.send("❌ Not connected to voice!")
         
-        # Check if queue is empty (prioritize database queue)
-        if hasattr(player, '_db_queue') and player._db_queue:
-            queue_is_empty = await player._db_queue.get_is_empty()
-            queue_size = await player._db_queue.get_count()
-        elif hasattr(player.queue, 'get_is_empty'):
-            queue_is_empty = await player.queue.get_is_empty()
-            queue_size = await player.queue.get_count()
-        else:
-            queue_is_empty = player.queue.is_empty
-            queue_size = player.queue.count
+        if not player.is_playing:
+            return await ctx.send("❌ Nothing is playing!")
         
-        if queue_is_empty and not player.playing:
-            return await ctx.send("📭 Queue is empty")
-        
-        # Paginate queue
-        per_page = 10
-        total_pages = max(1, math.ceil(queue_size / per_page))
-        page = max(1, min(page, total_pages))
-        
-        start = (page - 1) * per_page
-        end = start + per_page
+        current_title = player.current_track['title'] if player.current_track else "Unknown"
+        await player.skip()
         
         embed = discord.Embed(
-            title="🎵 Music Queue",
-            color=0x00aaff
-        )
-        
-        # Current track
-        if player.playing:
-            current = player.current
-            progress = self._get_progress_bar(player.position, current.length)
-            embed.add_field(
-                name="🎵 Now Playing",
-                value=f"**[{current.title}]({current.uri})**\n{progress}",
-                inline=False
-            )
-        
-        # Queue tracks
-        if not queue_is_empty:
-            queue_list = []
-            
-            # Get queue preview for display (prioritize database queue)
-            if hasattr(player, '_db_queue') and player._db_queue:
-                queue_preview = await player._db_queue.get_preview(per_page)
-                for i, track_data in enumerate(queue_preview[start:end], start + 1):
-                    duration = self._format_time(track_data.get('length', 0))
-                    requester_name = track_data.get('requester_name', 'Unknown')
-                    queue_list.append(f"`{i}.` **[{track_data['title']}]({track_data['uri']})** `{duration}` - {requester_name}")
-            elif hasattr(player.queue, 'get_preview'):
-                queue_preview = await player.queue.get_preview(per_page)
-                for i, track_data in enumerate(queue_preview[start:end], start + 1):
-                    duration = self._format_time(track_data.get('length', 0))
-                    requester_name = track_data.get('requester_name', 'Unknown')
-                    queue_list.append(f"`{i}.` **[{track_data['title']}]({track_data['uri']})** `{duration}` - {requester_name}")
-            else:
-                # Fallback for wavelink queue
-                for i, track in enumerate(list(player.queue)[start:end], start + 1):
-                    duration = self._format_time(track.length)
-                    requester = getattr(track, 'requester', 'Unknown')
-                    queue_list.append(f"`{i}.` **[{track.title}]({track.uri})** `{duration}` - {requester.mention if hasattr(requester, 'mention') else requester}")
-            
-            embed.add_field(
-                name=f"📝 Queue ({queue_size} tracks)",
-                value="\n".join(queue_list) if queue_list else "No tracks in queue",
-                inline=False
-            )
-        
-        # Queue info
-        if not queue_is_empty:
-            if hasattr(player.queue, 'get_preview'):
-                # For database queue, calculate duration from preview
-                queue_preview = await player.queue.get_preview(100)  # Get more tracks for duration calculation
-                total_duration = sum(track_data.get('length', 0) for track_data in queue_preview)
-            else:
-                # For wavelink queue
-                total_duration = sum(track.length for track in player.queue)
-            embed.add_field(name="Total Duration", value=self._format_time(total_duration), inline=True)
-        
-        embed.add_field(name="Loop Mode", value=player.loop_mode.title(), inline=True)
-        embed.set_footer(text=f"Page {page}/{total_pages}")
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="nowplaying", aliases=["np"])
-    async def nowplaying(self, ctx):
-        """Show currently playing track"""
-        player = self.get_player(ctx.guild)
-        if not player or not player.playing:
-            return await ctx.send("❌ Nothing is playing")
-        
-        track = player.current
-        progress = self._get_progress_bar(player.position, track.length)
-        
-        embed = discord.Embed(
-            title="🎵 Now Playing",
-            description=f"**[{track.title}]({track.uri})**",
-            color=0x00ff00
-        )
-        
-        embed.add_field(name="Duration", value=self._format_time(track.length), inline=True)
-        embed.add_field(name="Position", value=self._format_time(player.position), inline=True)
-        embed.add_field(name="Volume", value=f"{player.volume}%", inline=True)
-        
-        if hasattr(track, 'requester'):
-            embed.add_field(name="Requested by", value=track.requester.mention, inline=True)
-        
-        embed.add_field(name="Loop Mode", value=player.loop_mode.title(), inline=True)
-        embed.add_field(name="Auto Play", value="✅" if player.auto_play else "❌", inline=True)
-        
-        embed.add_field(name="Progress", value=progress, inline=False)
-        
-        if hasattr(track, 'thumbnail'):
-            embed.set_thumbnail(url=track.thumbnail)
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="queuedebug", aliases=["qd"])
-    async def queue_debug(self, ctx):
-        """Debug queue information (admin only)"""
-        if not await self.bot.is_owner(ctx.author):
-            return await ctx.send("❌ This command is for bot owners only")
-            
-        player = self.get_player(ctx.guild)
-        if not player:
-            return await ctx.send("❌ Not connected to a voice channel")
-        
-        embed = discord.Embed(
-            title="🔧 Queue Debug Info",
+            title="⏭️ Track Skipped",
+            description=f"Skipped: **{current_title}**",
             color=0xff9900
         )
-        
-        if hasattr(player.queue, 'get_count'):
-            queue_size = await player.queue.get_count()
-        else:
-            queue_size = player.queue.count
-            
-        if hasattr(player.queue, 'get_is_empty'):
-            queue_is_empty = await player.queue.get_is_empty()
-        else:
-            queue_is_empty = player.queue.is_empty
-        
-        embed.add_field(name="Queue Size", value=f"{queue_size}", inline=True)
-        embed.add_field(name="Queue Empty", value=f"{queue_is_empty}", inline=True)
-        embed.add_field(name="Queue Type", value=f"{type(player.queue).__name__}", inline=True)
-        embed.add_field(name="Playing", value=f"{player.playing}", inline=True)
-        embed.add_field(name="Paused", value=f"{player.paused}", inline=True)
-        embed.add_field(name="Loop Mode", value=f"{player.loop_mode}", inline=True)
-        embed.add_field(name="Auto Play", value=f"{player.auto_play}", inline=True)
-        embed.add_field(name="History Count", value=f"{len(player.history)}", inline=True)
-        embed.add_field(name="Tracks Played", value=f"{player.tracks_played}", inline=True)
-        embed.add_field(name="Connected", value=f"{player.connected}", inline=True)
-        
-        if player.current:
-            embed.add_field(
-                name="Current Track",
-                value=f"**{player.current.title}**\n"
-                      f"Source: {player.current.source}\n"
-                      f"Position: {self._format_time(player.position)}/{self._format_time(player.current.length)}",
-                inline=False
-            )
-        
-        if not queue_is_empty:
-            next_tracks = []
-            
-            if hasattr(player.queue, 'get_preview'):
-                # For database queue
-                queue_preview = await player.queue.get_preview(3)
-                for i, track_data in enumerate(queue_preview):
-                    next_tracks.append(f"{i+1}. {track_data['title']} ({track_data['source']})")
-            else:
-                # For wavelink queue
-                for i, track in enumerate(player.queue):
-                    if i >= 3:  # Show next 3 tracks
-                        break
-                    next_tracks.append(f"{i+1}. {track.title} ({track.source})")
-            
-            if next_tracks:
-                embed.add_field(
-                    name="Next Tracks",
-                    value="\n".join(next_tracks),
-                    inline=False
-                )
-        
         await ctx.send(embed=embed)
-    
-    @commands.command(name="queuelist", aliases=["ql"])
-    async def queue_list(self, ctx):
-        """List all tracks in queue with detailed info (admin only)"""
-        if not await self.bot.is_owner(ctx.author):
-            return await ctx.send("❌ This command is for bot owners only")
-            
-        player = self.get_player(ctx.guild)
-        if not player:
-            return await ctx.send("❌ Not connected to a voice channel")
-        
-        embed = discord.Embed(
-            title="📋 Detailed Queue List",
-            color=0x00aaff
-        )
-        
-        if player.current:
-            embed.add_field(
-                name="🎵 Currently Playing",
-                value=f"**{player.current.title}**\n"
-                      f"Source: {player.current.source}\n"
-                      f"URI: {player.current.uri[:50]}...",
-                inline=False
-            )
-        
-        if player.queue.is_empty:
-            embed.add_field(name="Queue", value="Empty", inline=False)
-        else:
-            queue_items = []
-            for i, track in enumerate(player.queue):
-                queue_items.append(
-                    f"**{i+1}.** {track.title}\n"
-                    f"   Source: {track.source}\n"
-                    f"   URI: {track.uri[:50]}...\n"
-                )
-                if i >= 4:  # Show first 5 tracks
-                    queue_items.append(f"... and {len(player.queue) - 5} more tracks")
-                    break
-            
-            embed.add_field(
-                name=f"Queue ({player.queue.count} tracks)",
-                value="\n".join(queue_items),
-                inline=False
-            )
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="testqueue")
-    async def test_queue(self, ctx):
-        """Test queue with duplicate songs (admin only)"""
-        if not await self.bot.is_owner(ctx.author):
-            return await ctx.send("❌ This command is for bot owners only")
-        
-        player = await self.connect_player(ctx)
-        if not player:
-            return
-        
-        # Add the same song 3 times
-        test_query = "test song"
-        
-        for i in range(3):
-            try:
-                tracks = await wavelink.Playable.search(f"scsearch:{test_query}")
-                if tracks:
-                    track = tracks[0]
-                    track.requester = ctx.author
-                    track.requested_at = datetime.now(timezone.utc)
-                    
-                    if not player.playing:
-                        await player.play(track)
-                        await ctx.send(f"🎵 Playing: {track.title}")
-                    else:
-                        await self._add_to_queue(player, track)
-                        await ctx.send(f"📝 Queued #{player.queue.count}: {track.title}")
-                    
-                    logger.info(f"Test queue - Added track {i+1}: {track.title} (URI: {track.uri})")
-                else:
-                    await ctx.send(f"❌ No results for test query {i+1}")
-            except Exception as e:
-                await ctx.send(f"❌ Error adding track {i+1}: {e}")
-                logger.error(f"Test queue error {i+1}: {e}")
-        
-        await ctx.send(f"✅ Test complete. Queue size: {player.queue.count}")
     
     @commands.command(name="pause")
     async def pause(self, ctx):
         """Pause the current track"""
         player = self.get_player(ctx.guild)
-        if not player or not player.playing:
-            return await ctx.send("❌ Nothing is playing")
+        if not player:
+            return await ctx.send("❌ Not connected to voice!")
         
-        if player.paused:
-            return await ctx.send("⏸️ Already paused")
+        if not player.is_playing:
+            return await ctx.send("❌ Nothing is playing!")
         
-        await player.pause(True)
+        if player.is_paused:
+            return await ctx.send("❌ Already paused!")
+        
+        player.pause()
+        
         embed = discord.Embed(
             title="⏸️ Paused",
-            description="Music has been paused",
-            color=0xffaa00
+            description="Playback paused",
+            color=0xffff00
         )
         await ctx.send(embed=embed)
     
@@ -1016,129 +621,90 @@ class Music(commands.Cog):
         """Resume the current track"""
         player = self.get_player(ctx.guild)
         if not player:
-            return await ctx.send("❌ Not connected to voice")
+            return await ctx.send("❌ Not connected to voice!")
         
-        if not player.paused:
-            return await ctx.send("▶️ Not paused")
+        if not player.is_paused:
+            return await ctx.send("❌ Not paused!")
         
-        await player.pause(False)
+        player.resume()
+        
         embed = discord.Embed(
             title="▶️ Resumed",
-            description="Music has been resumed",
+            description="Playback resumed",
             color=0x00ff00
         )
         await ctx.send(embed=embed)
     
     @commands.command(name="stop")
     async def stop(self, ctx):
-        """Stop the music and clear the queue"""
+        """Stop playback and clear the queue"""
         player = self.get_player(ctx.guild)
         if not player:
-            return await ctx.send("❌ Not connected to voice")
+            return await ctx.send("❌ Not connected to voice!")
         
-        player.queue.clear()
-        await player.stop()
+        player.stop()
         
         embed = discord.Embed(
             title="⏹️ Stopped",
-            description="Music stopped and queue cleared",
+            description="Playback stopped and queue cleared",
             color=0xff0000
         )
         await ctx.send(embed=embed)
     
-    @commands.command(name="volume", aliases=["vol"])
-    async def volume(self, ctx, volume: int = None):
-        """Set or show the volume"""
+    @commands.command(name="queue", aliases=["q"])
+    async def queue(self, ctx):
+        """Show the current queue"""
         player = self.get_player(ctx.guild)
         if not player:
-            return await ctx.send("❌ Not connected to voice")
+            return await ctx.send("❌ Not connected to voice!")
         
-        if volume is None:
-            embed = discord.Embed(
-                title="🔊 Current Volume",
-                description=f"Volume is set to **{player.volume}%**",
-                color=0x00aaff
+        queue_info = player.get_queue_info()
+        
+        embed = discord.Embed(
+            title="🎵 Music Queue",
+            color=0x0099ff
+        )
+        
+        # Current track
+        if queue_info['current']:
+            current = queue_info['current']
+            embed.add_field(
+                name="🎵 Now Playing",
+                value=f"**{current['title']}**\n"
+                      f"Duration: {self._format_duration(current['duration'])}\n"
+                      f"Source: {current['source'].title()}\n"
+                      f"Requested by: {current['requester'].mention if current.get('requester') else 'Unknown'}",
+                inline=False
             )
-            return await ctx.send(embed=embed)
         
-        if player.volume_locked and not ctx.author.guild_permissions.manage_channels:
-            return await ctx.send("🔒 Volume is locked")
-        
-        if not 0 <= volume <= 100:
-            return await ctx.send("❌ Volume must be between 0 and 100")
-        
-        await player.set_volume(volume)
-        
-        embed = discord.Embed(
-            title="🔊 Volume Changed",
-            description=f"Volume set to **{volume}%**",
-            color=0x00ff00
-        )
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="loop")
-    async def loop(self, ctx, mode: str = None):
-        """Set loop mode (none, track, queue)"""
-        player = self.get_player(ctx.guild)
-        if not player:
-            return await ctx.send("❌ Not connected to voice")
-        
-        if mode is None:
-            embed = discord.Embed(
-                title="🔄 Current Loop Mode",
-                description=f"Loop mode: **{player.loop_mode.title()}**",
-                color=0x00aaff
+        # Queue
+        if queue_info['queue']:
+            queue_text = ""
+            for i, track in enumerate(queue_info['queue'][:10], 1):
+                duration = self._format_duration(track['duration'])
+                queue_text += f"`{i}.` **{track['title']}** ({duration}) - {track['source'].title()}\n"
+            
+            if len(queue_info['queue']) > 10:
+                queue_text += f"\n... and {len(queue_info['queue']) - 10} more tracks"
+            
+            embed.add_field(
+                name=f"📝 Queue ({queue_info['queue_length']} tracks)",
+                value=queue_text,
+                inline=False
             )
-            return await ctx.send(embed=embed)
+        else:
+            embed.add_field(
+                name="📝 Queue",
+                value="Queue is empty",
+                inline=False
+            )
         
-        mode = mode.lower()
-        if mode not in ["none", "track", "queue"]:
-            return await ctx.send("❌ Invalid loop mode. Use: none, track, or queue")
+        # Player info
+        status = "🎵 Playing" if queue_info['is_playing'] else "⏸️ Paused" if queue_info['is_paused'] else "⏹️ Stopped"
+        embed.add_field(name="Status", value=status, inline=True)
+        embed.add_field(name="Loop Mode", value=queue_info['loop_mode'].title(), inline=True)
+        embed.add_field(name="Volume", value=f"{int(queue_info['volume'] * 100)}%", inline=True)
         
-        player.loop_mode = mode
-        
-        embed = discord.Embed(
-            title="🔄 Loop Mode Changed",
-            description=f"Loop mode set to **{mode.title()}**",
-            color=0x00ff00
-        )
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="shuffle")
-    async def shuffle(self, ctx):
-        """Shuffle the queue"""
-        player = self.get_player(ctx.guild)
-        if not player or player.queue.is_empty:
-            return await ctx.send("❌ Queue is empty")
-        
-        player.queue.shuffle()
-        
-        embed = discord.Embed(
-            title="🔀 Queue Shuffled",
-            description="The queue has been shuffled",
-            color=0x00ff00
-        )
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="remove")
-    async def remove(self, ctx, index: int):
-        """Remove a track from the queue"""
-        player = self.get_player(ctx.guild)
-        if not player or player.queue.is_empty:
-            return await ctx.send("❌ Queue is empty")
-        
-        if not 1 <= index <= player.queue.count:
-            return await ctx.send(f"❌ Invalid index. Use 1-{player.queue.count}")
-        
-        # Convert to 0-based index
-        track = player.queue[index - 1]
-        del player.queue[index - 1]
-        
-        embed = discord.Embed(
-            title="🗑️ Track Removed",
-            description=f"Removed **{track.title}** from the queue",
-            color=0xff0000
-        )
         await ctx.send(embed=embed)
     
     @commands.command(name="clear")
@@ -1146,29 +712,12 @@ class Music(commands.Cog):
         """Clear the queue"""
         player = self.get_player(ctx.guild)
         if not player:
-            return await ctx.send("❌ Not connected to voice")
+            return await ctx.send("❌ Not connected to voice!")
         
-        # Check if queue is empty
-        if hasattr(player.queue, 'get_is_empty'):
-            queue_is_empty = await player.queue.get_is_empty()
-        else:
-            queue_is_empty = player.queue.is_empty
+        if not player.queue:
+            return await ctx.send("❌ Queue is empty!")
         
-        if queue_is_empty:
-            return await ctx.send("❌ Queue is empty")
-        
-        # Get count before clearing
-        if hasattr(player.queue, 'get_count'):
-            queue_size = await player.queue.get_count()
-        else:
-            queue_size = player.queue.count
-        
-        # Clear the queue
-        if hasattr(player.queue, 'clear') and asyncio.iscoroutinefunction(player.queue.clear):
-            cleared = await player.queue.clear()
-        else:
-            cleared = queue_size
-            player.queue.clear()
+        cleared = await player.clear_queue()
         
         embed = discord.Embed(
             title="🗑️ Queue Cleared",
@@ -1177,245 +726,109 @@ class Music(commands.Cog):
         )
         await ctx.send(embed=embed)
     
-    @commands.command(name="disconnect", aliases=["leave", "dc"])
-    async def disconnect(self, ctx):
-        """Disconnect from voice channel"""
+    @commands.command(name="nowplaying", aliases=["np"])
+    async def nowplaying(self, ctx):
+        """Show currently playing track"""
         player = self.get_player(ctx.guild)
         if not player:
-            return await ctx.send("❌ Not connected to voice")
+            return await ctx.send("❌ Not connected to voice!")
         
-        # Save queue to database
-        if self.bot.db and not player.queue.is_empty:
-            queue_data = []
-            for track in player.queue:
-                queue_data.append({
-                    'title': track.title,
-                    'uri': track.uri,
-                    'length': track.length,
-                    'requester_id': getattr(track.requester, 'id', None) if hasattr(track, 'requester') else None
-                })
-            await self.bot.db.save_music_queue(ctx.guild.id, queue_data)
+        if not player.current_track:
+            return await ctx.send("❌ Nothing is playing!")
         
-        await player.disconnect()
-        if ctx.guild.id in self.players:
-            del self.players[ctx.guild.id]
+        track = player.current_track
         
         embed = discord.Embed(
-            title="👋 Disconnected",
-            description="Left the voice channel",
+            title="🎵 Now Playing",
+            description=f"**{track['title']}**",
             color=0x00ff00
         )
+        
+        embed.add_field(name="Duration", value=self._format_duration(track['duration']), inline=True)
+        embed.add_field(name="Source", value=track['source'].title(), inline=True)
+        embed.add_field(name="Requested by", value=track['requester'].mention if track.get('requester') else 'Unknown', inline=True)
+        
+        if track.get('uploader'):
+            embed.add_field(name="Uploader", value=track['uploader'], inline=True)
+        
+        if track.get('thumbnail'):
+            embed.set_thumbnail(url=track['thumbnail'])
+        
+        # Player status
+        status = "🎵 Playing" if player.is_playing else "⏸️ Paused"
+        embed.add_field(name="Status", value=status, inline=True)
+        embed.add_field(name="Loop", value=player.loop_mode.title(), inline=True)
+        
         await ctx.send(embed=embed)
     
-    def _format_time(self, ms: int) -> str:
-        """Format milliseconds to readable time"""
-        seconds = ms // 1000
-        minutes = seconds // 60
-        hours = minutes // 60
+    @commands.command(name="cookies")
+    async def cookies(self, ctx):
+        """Check cookies status"""
+        embed = discord.Embed(
+            title="🍪 Cookies Status",
+            color=0x0099ff
+        )
+        
+        cookies_found = False
+        cookies_info = ""
+        
+        cookies_paths = [
+            'cookies.txt',
+            '/rat-bot/cookies.txt', 
+            os.path.expanduser('~/cookies.txt'),
+            'data/cookies.txt'
+        ]
+        
+        for path in cookies_paths:
+            if os.path.exists(path):
+                cookies_found = True
+                size = os.path.getsize(path)
+                cookies_info += f"✅ **{path}** ({size} bytes)\n"
+            else:
+                cookies_info += f"❌ **{path}** (not found)\n"
+        
+        embed.add_field(
+            name="Cookie Files",
+            value=cookies_info,
+            inline=False
+        )
+        
+        if cookies_found:
+            embed.add_field(
+                name="Status",
+                value="✅ Cookies available - Enhanced YouTube access enabled",
+                inline=False
+            )
+            embed.color = 0x00ff00
+        else:
+            embed.add_field(
+                name="Status", 
+                value="⚠️ No cookies found - YouTube access may be limited",
+                inline=False
+            )
+            embed.add_field(
+                name="Setup Instructions",
+                value="Run `python setup_cookies.py` to set up cookies for better YouTube access",
+                inline=False
+            )
+            embed.color = 0xffaa00
+        
+        await ctx.send(embed=embed)
+    
+    def _format_duration(self, seconds: int) -> str:
+        """Format duration in seconds to MM:SS or HH:MM:SS"""
+        if not seconds:
+            return "Unknown"
+        
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
         
         if hours > 0:
-            return f"{hours}:{minutes%60:02d}:{seconds%60:02d}"
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         else:
-            return f"{minutes}:{seconds%60:02d}"
-    
-    def _get_progress_bar(self, position: int, duration: int, length: int = 20) -> str:
-        """Generate a progress bar"""
-        if duration == 0:
-            return "`[Live Stream]`"
-        
-        progress = position / duration
-        filled = int(progress * length)
-        bar = "█" * filled + "░" * (length - filled)
-        
-        pos_str = self._format_time(position)
-        dur_str = self._format_time(duration)
-        
-        return f"`{pos_str}` {bar} `{dur_str}`"
-    
-    @commands.Cog.listener()
-    async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
-        """Handle track end events"""
-        player = payload.player
-        
-        if not player:
-            return
-        
-        logger.info(f"Track ended: {payload.track.title if payload.track else 'Unknown'}")
-        logger.info(f"Queue size: {player.queue.count}")
-        logger.info(f"Loop mode: {player.loop_mode}")
-        
-        # Update statistics
-        player.tracks_played += 1
-        if hasattr(payload.track, 'length'):
-            player.total_playtime += payload.track.length
-        
-        # Add to history
-        if len(player.history) >= 50:  # Keep last 50 tracks
-            player.history.pop(0)
-        player.history.append(payload.track)
-        
-        # Handle loop modes
-        if player.loop_mode == "track" and payload.track:
-            logger.info("Looping current track")
-            return await player.play(payload.track)
-        
-        # Clear skip votes
-        player.skip_votes.clear()
-        
-        # Play next track with concurrency control
-        async with player._track_lock:
-            if player._processing_next_track:
-                logger.info("Already processing next track, skipping...")
-                return
-            
-            player._processing_next_track = True
-            
-            try:
-                # Check database queue first, then wavelink queue
-                queue_is_empty = True
-                if hasattr(player, '_db_queue') and player._db_queue:
-                    queue_is_empty = await player._db_queue.get_is_empty()
-                elif hasattr(player.queue, 'get_is_empty'):
-                    queue_is_empty = await player.queue.get_is_empty()
-                else:
-                    queue_is_empty = player.queue.is_empty
-                
-                if not queue_is_empty:
-                    try:
-                        # Get queue size
-                        if hasattr(player, '_db_queue') and player._db_queue:
-                            queue_size = await player._db_queue.get_count()
-                        elif hasattr(player.queue, 'get_count'):
-                            queue_size = await player.queue.get_count()
-                        else:
-                            queue_size = player.queue.count
-                        logger.info(f"Queue before getting next track: {queue_size} tracks")
-                        
-                        # Get next track from database queue if available, otherwise wavelink queue
-                        if hasattr(player, '_db_queue') and player._db_queue:
-                            next_track = await player._db_queue.get_wait()
-                            # Also remove from wavelink queue to keep in sync
-                            if hasattr(player, '_wavelink_queue') and not player._wavelink_queue.is_empty:
-                                await player._wavelink_queue.get_wait()
-                        else:
-                            next_track = await player.queue.get_wait()
-                            
-                        logger.info(f"Got next track from queue: {next_track.title} (Source: {next_track.source})")
-                        
-                        # Get updated queue size
-                        if hasattr(player, '_db_queue') and player._db_queue:
-                            queue_size_after = await player._db_queue.get_count()
-                        elif hasattr(player.queue, 'get_count'):
-                            queue_size_after = await player.queue.get_count()
-                        else:
-                            queue_size_after = player.queue.count
-                        logger.info(f"Queue after getting next track: {queue_size_after} tracks")
-                        
-                        # Handle YouTube fallback for queued tracks
-                        if next_track.source == "youtube":
-                            try:
-                                await player.play(next_track)
-                                # Check if it actually started playing
-                                await asyncio.sleep(2)
-                                if not player.playing and not player.paused:
-                                    logger.warning("Queued YouTube track failed, attempting fallback...")
-                                    # Find the channel for fallback
-                                    channel = player.channel
-                                    if channel and hasattr(channel, 'guild'):
-                                        # Create a mock context for fallback
-                                        class MockContext:
-                                            def __init__(self, channel, author):
-                                                self.channel = channel
-                                                self.author = author
-                                                self.send = channel.send
-                                        
-                                        mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
-                                        await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
-                                        return
-                            except Exception as e:
-                                logger.warning(f"Queued YouTube track failed: {e}, attempting fallback...")
-                                channel = player.channel
-                                if channel and hasattr(channel, 'guild'):
-                                    class MockContext:
-                                        def __init__(self, channel, author):
-                                            self.channel = channel
-                                            self.author = author
-                                            self.send = channel.send
-                                    
-                                    mock_ctx = MockContext(channel, next_track.requester if hasattr(next_track, 'requester') else None)
-                                    await self._handle_youtube_fallback(mock_ctx, next_track.title, player)
-                                    return
-                        else:
-                            await player.play(next_track)
-                    
-                    except Exception as e:
-                        logger.error(f"Error playing next track: {e}")
-                        # Try to continue with the next track if available
-                        if hasattr(player, '_db_queue') and player._db_queue:
-                            queue_is_empty = await player._db_queue.get_is_empty()
-                        elif hasattr(player.queue, 'get_is_empty'):
-                            queue_is_empty = await player.queue.get_is_empty()
-                        else:
-                            queue_is_empty = player.queue.is_empty
-                            
-                        if not queue_is_empty:
-                            try:
-                                if hasattr(player, '_db_queue') and player._db_queue:
-                                    next_track = await player._db_queue.get_wait()
-                                else:
-                                    next_track = await player.queue.get_wait()
-                                await player.play(next_track)
-                            except Exception as e2:
-                                logger.error(f"Failed to play backup track: {e2}")
-                                
-                elif player.loop_mode == "queue" and player.history:
-                    logger.info("Restarting queue loop")
-                    # Restart queue
-                    for track in reversed(player.history):
-                        await self._add_to_queue(player, track)
-                        
-                    if hasattr(player, '_db_queue') and player._db_queue:
-                        queue_is_empty = await player._db_queue.get_is_empty()
-                    elif hasattr(player.queue, 'get_is_empty'):
-                        queue_is_empty = await player.queue.get_is_empty()
-                    else:
-                        queue_is_empty = player.queue.is_empty
-                        
-                    if not queue_is_empty:
-                        if hasattr(player, '_db_queue') and player._db_queue:
-                            next_track = await player._db_queue.get_wait()
-                        else:
-                            next_track = await player.queue.get_wait()
-                        await player.play(next_track)
-                elif player.auto_play and payload.track:
-                    logger.info("Attempting auto-play")
-                    # Auto-play similar tracks (if supported)
-                    try:
-                        recommended = await wavelink.Playable.search(f"scsearch:{payload.track.title}")
-                        if not recommended:
-                            recommended = await wavelink.Playable.search(f"bcsearch:{payload.track.title}")
-                            
-                        if recommended and len(recommended) > 1:
-                            next_track = recommended[1]  # Skip the same track
-                            next_track.requester = payload.track.requester if hasattr(payload.track, 'requester') else None
-                            await player.play(next_track)
-                    except Exception as e:
-                        logger.warning(f"Auto-play failed: {e}")
-                else:
-                    logger.info("No more tracks to play, queue is empty")
-            
-            finally:
-                # Always reset the processing flag
-                player._processing_next_track = False
-    
-    @commands.Cog.listener()
-    async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
-        """Handle track start events"""
-        player = payload.player
-        track = payload.track
-        
-        # Update bot statistics
-        self.bot.stats['songs_played'] += 1
+            return f"{minutes:02d}:{seconds:02d}"
+
 
 async def setup(bot):
     await bot.add_cog(Music(bot))
