@@ -18,6 +18,12 @@ class DatabaseQueue:
         self._cache = []  # Local cache for performance
         self._cache_valid = False
         self._lock = asyncio.Lock()
+        
+        # Compatibility attributes for wavelink.Queue
+        self.history = []  # Add history attribute for compatibility
+        self.loop_mode = "none"  # Add loop_mode for compatibility
+        self._cached_size = 0
+        self._cached_empty = True
     
     async def put_wait(self, track: wavelink.Playable) -> None:
         """Add a track to the queue"""
@@ -39,7 +45,9 @@ class DatabaseQueue:
             position = await self.db.add_to_queue(self.guild_id, track_data)
             logger.info(f"Added track to DB queue: {track.title} at position {position}")
             
-            # Invalidate cache
+            # Update cache
+            self._cached_size = position
+            self._cached_empty = False
             self._cache_valid = False
     
     async def get_wait(self) -> Optional[wavelink.Playable]:
@@ -69,7 +77,9 @@ class DatabaseQueue:
                     if track_data.get('requested_at'):
                         track._db_requested_at = track_data['requested_at']
                     
-                    # Invalidate cache
+                    # Update cache
+                    self._cached_size = max(0, self._cached_size - 1)
+                    self._cached_empty = (self._cached_size == 0)
                     self._cache_valid = False
                     
                     return track

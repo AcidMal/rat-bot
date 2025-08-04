@@ -1282,7 +1282,12 @@ class Music(commands.Cog):
             except Exception as e:
                 logger.error(f"Error playing next track: {e}")
                 # Try to continue with the next track if available
-                if not player.queue.is_empty:
+                if hasattr(player.queue, 'get_is_empty'):
+                    queue_is_empty = await player.queue.get_is_empty()
+                else:
+                    queue_is_empty = player.queue.is_empty
+                    
+                if not queue_is_empty:
                     try:
                         next_track = await player.queue.get_wait()
                         await player.play(next_track)
@@ -1294,7 +1299,13 @@ class Music(commands.Cog):
             # Restart queue
             for track in reversed(player.history):
                 await player.queue.put_wait(track)
-            if not player.queue.is_empty:
+                
+            if hasattr(player.queue, 'get_is_empty'):
+                queue_is_empty = await player.queue.get_is_empty()
+            else:
+                queue_is_empty = player.queue.is_empty
+                
+            if not queue_is_empty:
                 next_track = await player.queue.get_wait()
                 await player.play(next_track)
         elif player.auto_play and payload.track:
